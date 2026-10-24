@@ -1,0 +1,2326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>myLab LIMS</title>
+<style>
+:root{
+  --ink:#102a43;--mut:#486581;--bg:#f0f4f8;--card:#ffffff;--side:#0b2230;
+  --acc:#0284c7;--line:#bcccdc;--hi:#dc2626;--lo:#2563eb;--ok:#16a34a;--focus:#0284c7
+}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+#app{display:flex;min-height:100vh}
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0b2230,#1e3a8a)}
+.login-box{background:#fff;padding:36px 40px;border-radius:16px;width:min(400px,94vw);box-shadow:0 25px 50px -12px rgba(0,0,0,.4)}
+.login-box h1{margin:0 0 6px;font-size:22px;color:var(--side)}
+.login-box p{margin:0 0 24px;color:var(--mut);font-size:14px}
+.login-box label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px;font-weight:500}
+.login-box input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:14px}
+.login-box button{width:100%;padding:12px;background:var(--acc);color:#fff;border:0;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+.login-box button:hover{background:#0369a1}
+.login-err{color:var(--hi);font-size:13px;margin-bottom:12px;display:none}
+nav{width:250px;background:var(--side);color:#cbd5e1;padding:20px 14px;flex-shrink:0;display:flex;flex-direction:column;gap:4px}
+nav h1{font-size:17px;margin:0 0 4px 8px;color:#fff;line-height:1.3}
+nav h1 small{font-size:11px;color:#94a3b8;font-weight:400}
+nav .user-info{padding:10px 12px;margin:8px 0 16px;background:#132f42;border-radius:8px;font-size:12px;color:#94a3b8}
+nav .user-info b{color:#e2e8f0;display:block;font-size:13px}
+nav button{display:flex;align-items:center;width:100%;text-align:left;background:none;border:0;color:inherit;padding:11px 14px;border-radius:8px;font:inherit;cursor:pointer;font-weight:500;transition:background .15s,color .15s}
+nav button.on,nav button:hover{background:#1e3a8a;color:#fff}
+nav .logout{margin-top:auto;color:#fca5a5}
+nav .logout:hover{background:#7f1d1d;color:#fff}
+main{flex:1;padding:28px;min-width:0;overflow-y:auto}
+h2{margin:0 0 16px;font-size:24px;color:var(--side)}
+h3{margin:20px 0 10px;font-size:18px}
+h4{margin:16px 0 8px;font-size:16px}
+.bar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;align-items:center}
+input,select,textarea{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--focus);box-shadow:0 0 0 3px rgba(2,132,199,.2)}
+button.b{background:var(--acc);color:#fff;border:0;padding:10px 18px;border-radius:8px;font:inherit;cursor:pointer;font-weight:600;transition:background .15s}
+button.b:hover{background:#0369a1}
+button.b.g{background:#e2e8f0;color:var(--ink)}
+button.b.g:hover{background:#cbd5e1}
+button.b.d{background:#fff;color:var(--hi);border:1px solid var(--hi)}
+button.b.d:hover{background:#ffeeef}
+button.b.s{background:#16a34a}
+button.b.s:hover{background:#15803d}
+button.b:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.tw{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);margin-bottom:16px}
+table{border-collapse:collapse;width:100%;text-align:left}
+th,td{padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:13px;color:var(--mut);font-weight:600;background:#f8fafc}
+tr.k{cursor:pointer}
+tr.k:hover{background:#f1f5f9}
+.st{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:24px}
+.st div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.st b{font-size:28px;display:block;color:var(--side)}
+.tag{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;display:inline-block}
+.tag.Completed{background:#dcfce7;color:var(--ok)}
+.tag.Progress{background:#fef9c3;color:#ca8a04}
+.tag.Pending{background:#f1f5f9;color:var(--mut)}
+.tag.Reject{background:#fee2e2;color:#b91c1c}
+.tag.role{background:#e0f2fe;color:#0369a1;text-transform:capitalize}
+.H{color:var(--hi);font-weight:700}.L{color:var(--lo);font-weight:700}.A{color:var(--hi);font-weight:700}
+.empty{padding:36px;color:var(--mut);text-align:center;font-style:italic}
+dialog{border:0;border-radius:12px;padding:24px;width:min(860px,95vw);max-height:92vh;box-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 10px 10px -5px rgba(0,0,0,.04);background:#fff;overflow-y:auto}
+dialog::backdrop{background:rgba(0,0,0,.5);backdrop-filter:blur(2px)}
+.f{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.f label{display:block;font-size:13px;color:var(--mut);font-weight:500;margin-bottom:4px}
+.f input,.f select,.f textarea{width:100%}
+.full{grid-column:1/-1}
+.chk{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 16px;max-height:280px;overflow-y:auto;border:1px solid var(--line);padding:12px;border-radius:8px;background:#f8fafc}
+.chk label{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px}
+.chk input[type="checkbox"]{width:18px;height:18px;accent-color:var(--acc)}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;padding:12px 16px}
+summary{cursor:pointer;font-weight:600;color:var(--side)}
+#report{display:none}
+.muted{color:var(--mut);font-size:13px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.badge.admin{background:#fef3c7;color:#92400e}
+.badge.lab{background:#dcfce7;color:#166534}
+.badge.phleb{background:#e0f2fe;color:#075985}
+.badge.reception{background:#fce7f3;color:#9d174d}
+.badge.cashier{background:#ecfdf5;color:#047857}
+.badge.auditor{background:#f3e8ff;color:#6b21a8}
+.sig-preview{max-height:60px;max-width:180px;border:1px solid var(--line);border-radius:6px;margin-top:6px}
+.alert{padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:14px}
+.alert.warn{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.alert.info{background:#e0f2fe;color:#075985;border:1px solid #7dd3fc}
+.alert.ok{background:#dcfce7;color:#166534;border:1px solid #86efac}
+
+/* ========== PRINT – Letterhead compatible ========== */
+@media print{
+  @page{margin:0;size:A4}
+  html,body{margin:0;padding:0;background:#fff;height:auto}
+  nav,main,dialog,#login-screen,#app{display:none!important}
+  #report{
+    display:block!important;
+    padding: 3.8cm 1.8cm 1.5cm 1.8cm;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 11pt;
+    color: #000;
+    line-height: 1.35;
+    min-height: 100vh;
+    box-sizing: border-box;
+    position: relative;
+  }
+  #report.with-lh{
+    padding: 0 0 2.2cm 0;
+    min-height: 100vh;
+    display: flex!important;
+    flex-direction: column;
+  }
+  #report.with-lh .report-body{
+    padding: 0.4cm 1.5cm 0.6cm 1.5cm;
+    flex: 1 1 auto;
+  }
+  #report table{width:100%;border-collapse:collapse;margin:8px 0}
+  #report th,#report td{border-bottom:1px solid #999;padding:5px 8px;text-align:left;font-size:10.5pt}
+  #report th{font-weight:700;background:transparent}
+  .H,.L,.A{color:#000!important;font-weight:700}
+  .no-print{display:none!important}
+  .lh-img{
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 4.2cm;
+    object-fit: fill;
+    object-position: top center;
+    display: block;
+    margin: 0;
+    padding: 0;
+  }
+  .lh-foot{
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 1.8cm;
+    object-fit: fill;
+    object-position: bottom center;
+    display: block;
+    margin: 0;
+    padding: 0;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+  .report-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin:0 0 12px;font-size:10.5pt}
+  .report-meta div{margin:2px 0}
+  .report-footer{margin-top:24px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:28px}
+  .report-footer .sig-block{text-align:center;min-width:160px}
+  .report-footer img.sig{max-height:48px;max-width:150px;display:block;margin:0 auto 4px}
+  .report-footer .name{font-weight:700;font-size:10.5pt}
+  .report-footer .title{font-size:9pt}
+  .report-footer .tests-by{font-size:8pt;color:#444;max-width:180px;margin:0 auto 4px}
+}
+@media(max-width:800px){
+  #app{flex-direction:column}
+  nav{width:auto;flex-direction:row;flex-wrap:wrap;gap:6px;padding:12px}
+  nav h1{width:100%;margin:0 0 8px}
+  nav .user-info{width:100%}
+  nav button{width:auto;padding:8px 12px;font-size:14px}
+  nav .logout{margin-top:0}
+  .f{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>myLab LIMS</h1>
+    <p>Laboratory information system</p>
+    <div class="login-err" id="login-err"></div>
+    <label>Facility code</label>
+    <input id="lf" autocomplete="organization" autocapitalize="none" placeholder="given by your administrator">
+    <label>Username</label>
+    <input id="lu" autocomplete="username" autocapitalize="none">
+    <label>Password</label>
+    <input id="lp" type="password" autocomplete="current-password">
+    <button onclick="doLogin()">Sign In</button>
+    <p class="muted" style="margin-top:18px;text-align:center;font-size:12px">
+      <a href="#" onclick="regDlg();return false">New facility? Register here</a><br>
+      <span style="font-size:11px">Staff: ask your facility administrator for the facility code and your login.</span>
+    </p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none">
+  <nav id="nav" aria-label="Main Navigation"></nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<dialog id="dlg" aria-modal="true"></dialog>
+<div id="report" aria-hidden="true"></div>
+
+<script>
+/* ============================================================
+   myLab LIMS – Secure Single-File Edition
+   Roles: admin | lab (scientist) | phleb (phlebotomist) | auditor
+   Features: login, RBAC, audit log, AES encryption of PHI,
+             verified backups, user signatures, letterhead print
+   ============================================================ */
+
+const K = 'lims_v4_secure';
+
+const SESSION_K = 'lims_session';
+const today = () => new Date().toISOString().slice(0,10);
+const nowISO = () => new Date().toISOString();
+const e = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+
+/* ---------- Crypto helpers (Web Crypto API) ---------- */
+async function sha256(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function deriveKey(pass, saltB64){
+  const salt = Uint8Array.from(atob(saltB64),c=>c.charCodeAt(0));
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt, iterations:100000, hash:'SHA-256'},
+    base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']
+  );
+}
+async function encryptText(plain, key){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM',iv}, key, new TextEncoder().encode(plain));
+  return btoa(String.fromCharCode(...iv))+'.'+btoa(String.fromCharCode(...new Uint8Array(ct)));
+}
+async function decryptText(cipher, key){
+  const [ivB, ctB] = cipher.split('.');
+  const iv = Uint8Array.from(atob(ivB),c=>c.charCodeAt(0));
+  const ct = Uint8Array.from(atob(ctB),c=>c.charCodeAt(0));
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM',iv}, key, ct);
+  return new TextDecoder().decode(pt);
+}
+function simpleChecksum(str){
+  let h=0;
+  for(let i=0;i<str.length;i++) h=((h<<5)-h)+str.charCodeAt(i)|0;
+  return (h>>>0).toString(16);
+}
+
+/* ---------- Test Catalogue (complete panels from original lab file) ---------- */
+const N=(n,u,r,x)=>({n,u,t:'n',r,x});
+const S=(n,o,abn=[],x)=>({n,t:'s',o,abn,x});
+const T=(n,x)=>({n,t:'t',x});
+const any=(a,b)=>[['',0,200,a,b]];
+const ad=(a,b,c,d)=>[['',12,200,a,b],['',0,12,c,d]];
+const sx=(a,b,c,d,f,g)=>[['M',12,200,a,b],['F',12,200,c,d],['',0,12,f,g]];
+const RN=['Non-Reactive','Reactive','Indeterminate'];
+const DIP=['Negative','Trace','+','++','+++','++++'];
+const TIT=['Nil','1:20','1:40','1:80','1:160','1:320','1:640'];
+const AB=['','R','+','++','+++'];
+const ABX='Gentamicin,Erythromycin,Streptomycin,Chloramphenicol,Tetracycline,Ampiclox,Ceporex,Nalidixic Acid,Repamin,Azithromycin,Diovid,Ceforaxin,Levofloxacin,Levoxin,Amovic (Augmentin),Pefloxacin,Zinnacef,Amoxicillin,Rocephin,Ciprofloxacin,Tarivid,Sparfloxacin,Avicef,Ceftriaxone tazobactam,Nitrofurantoin,Septrin,Ofloxacin'.split(',');
+const ANT=['Paratyphi A','Paratyphi B','Paratyphi C','Typhi D'];
+const mk=(name,an)=>({id:name.toLowerCase().replace(/\W+/g,'-'),name,an});
+const CAT=[
+  mk('Full blood count + differential',[
+    N('PCV','%',sx(40,54,36,47,32,42)),
+    N('Hb','g/dL',sx(13,18,11.5,15.5,10.7,14.1)),
+    N('RBC','×10¹²/L',sx(4.0,5.5,3.5,4.5,4.0,5.2)),
+    N('MCV','fL',any(76,93)),
+    N('MCH','pg',any(27,33)),
+    N('MCHC','g/dL',any(31,35)),
+    N('PLT','×10⁹/L',any(150,400)),
+    N('WBC','×10⁹/L',any(4.0,11.0)),
+    N('Neutrophils','%',any(40,75)),
+    N('Lymphocytes','%',any(20,40)),
+    N('Monocytes','%',any(2,10)),
+    N('Eosinophils','%',any(1,6)),
+    N('Basophils','%',any(0,1)),
+    T('Remark')
+  ]),
+  mk('Haemoglobin (Hb)',[N('Hb','g/dL',sx(13,18,11.5,15.5,10.7,14.1))]),
+  mk('PCV',[N('PCV','%',sx(40,54,36,47,32,42))]),
+  mk('PCV + Haemoglobin',[
+    N('PCV','%',sx(40,54,36,47,32,42)),
+    N('Hb','g/dL',sx(13,18,11.5,15.5,10.7,14.1))
+  ]),
+  mk('Malaria parasite (MP)',[
+    S('M.P',['No Malaria Parasite Seen','Trophozoite of P. falciparum (+) seen'],['Trophozoite of P. falciparum (+) seen']),
+    N('Parasite density','p/µL')
+  ]),
+  mk('Widal',[
+    ...ANT.map(a=>S('O – S. '+a,TIT,TIT.slice(4),'>1:80 significant')),
+    ...ANT.map(a=>S('H – S. '+a,TIT,TIT.slice(4),'>1:80 significant'))
+  ]),
+  mk('Genotype',[S('Genotype',['AA','AS','SS','AC','SC','CC'])]),
+  mk('Blood group',[S('Blood group',[
+    'A Rh D Positive','A Rh D Negative',
+    'B Rh D Positive','B Rh D Negative',
+    'AB Rh D Positive','AB Rh D Negative',
+    'O Rh D Positive','O Rh D Negative'
+  ])]),
+  mk('HBsAg',[S('HBsAg',RN,['Reactive'])]),
+  mk('HBV Profile',[
+    S('HBsAg',RN,['Reactive']),
+    S('HBsAb',RN,['Reactive']),
+    S('HBeAg',RN,['Reactive']),
+    S('HBeAb',RN,['Reactive']),
+    S('HBcAb',RN,['Reactive'])
+  ]),
+  mk('HCV',[S('HCV',RN,['Reactive'])]),
+  mk('RVS',[S('RVS',RN,['Reactive'])]),
+  mk('VDRL',[S('VDRL',RN,['Reactive'])]),
+  mk('H. pylori',[S('H. pylori',RN,['Reactive'])]),
+  mk('Serum PT',[S('Serum PT',['Negative','Positive','Indeterminate'],['Positive'])]),
+  mk('Random blood sugar (RBS)',[N('RBS','mmol/L',any(3,9))]),
+  mk('Fasting blood sugar (FBS)',[N('FBS','mmol/L',any(3,6))]),
+  mk('HbA1c',[N('HbA1c','%',any(3.8,5.8))]),
+  mk('Insulin',[N('Insulin','µIU/mL',any(2.3,11.6))]),
+  mk('Urinalysis',[
+    T('Colour'),
+    S('Consistency',['Clear','Slightly cloudy','Cloudy','Turbid']),
+    ...['Glucose','Urobilinogen','Bilirubin','Blood','Ketone','Protein','Nitrite','Leukocyte'].map(n=>S(n,DIP)),
+    T('pH'),
+    T('Specific gravity'),
+    ...['Ascorbic acid','Creatinine','Calcium','Micro albumin'].map(n=>S(n,DIP))
+  ]),
+  mk('Liver function test (LFT)',[
+    N('Total bilirubin','µmol/L',any(2,20.5)),
+    N('Conjugated bilirubin','µmol/L',any(0,8.8)),
+    N('ALP','U/L',any(45,135)),
+    N('AST (GOT)','U/L',any(0,40)),
+    N('ALT (GPT)','U/L',any(0,41)),
+    N('Total protein','g/L',any(60,88)),
+    N('Albumin','g/L',any(35,55))
+  ]),
+  mk('GGT',[N('GGT','U/L',any(0,47))]),
+  mk('Renal profile (E/U/Cr)',[
+    N('Urea','mmol/L',any(1.7,8.3)),
+    N('Sodium (Na)','mmol/L',any(135,145)),
+    N('Potassium (K)','mmol/L',any(3.5,5.0)),
+    N('Chloride','mmol/L',any(98,106)),
+    N('Bicarbonate','mmol/L',any(22,32)),
+    N('Creatinine','mg/dL',any(0.6,1.3)),
+    N('BUN (Blood Urea Nitrogen)','mg/dL',any(7,20)),
+    N('BUN (Creatinine Ratio)','',any(10,20)),
+    N('eGFR','mL/min/1.73m²',[['',18,200,90,null]],'≥90 mL/min/1.73m²')
+  ]),
+  mk('Fasting lipid profile',[
+    N('Cholesterol','mmol/L',any(2.34,5.2)),
+    N('Triglyceride','mmol/L',any(0.7,1.7)),
+    N('HDL','mmol/L',any(0.77,2.25)),
+    N('LDL','mmol/L',any(0,4.13))
+  ]),
+  mk('PSA',[N('PSA','ng/mL',[
+    ['M',40,50,0,2.5],['M',50,60,0,3.5],['M',60,70,0,4.5],['M',70,80,0,6.5]
+  ])]),
+  mk('TSH',[N('TSH','mIU/L',[
+    ['',21,55,0.39,6.16],['',55,88,0.5,8.9]
+  ])]),
+  mk('Testosterone',[N('Testosterone','ng/mL',[
+    ['M',0,19,0,8.82],['M',19,50,2.49,8.36],['M',50,200,1.93,7.4],
+    ['F',0,19,0.025,0.383],['F',19,50,0.084,0.481],['F',50,200,0.029,0.408]
+  ])]),
+  mk('Estrogen',[N('Estrogen','pg/mL',[['F',12,200,150,750]])]),
+  mk('FSH',[N('FSH','mIU/mL',[['M',12,200,0.97,12.04]],'Women: follicular 3.5–12.5; ovulation 4.7–21.5; luteal 1.7–7.7; menopause 25.8–134.8')]),
+  mk('LH',[N('LH','mIU/mL',[['M',12,200,0.7,17]],'Women: follicular 0.5–10.5; midcycle 18.4–61.2; luteal 0.5–10.5; postmenopausal 8.2–40.8')]),
+  mk('Prolactin',[N('Prolactin','ng/mL',[
+    ['F',12,200,4.79,23.3],['M',12,200,4.04,15.2]
+  ])]),
+  mk('Progesterone',[N('Progesterone','ng/mL',[],'Non-pregnant: ovulation <1.4–12.0; luteal 1.70–28.70; post-menopause <1.40–2.00. Pregnant: 1st trimester 10.99–53.00; 2nd trimester 21.50–60.00')]),
+  mk('Seminal fluid analysis (SFA)',[
+    T('Abstinence (days)'),T('Volume (mL)'),T('Time produced'),T('Time received'),
+    S('Viscosity',['Normal','Hypo-viscous','Hyper-viscous']),
+    T('Colour'),T('Method'),
+    T('Pus cells (/hpf)'),T('Red blood cells'),T('Bacterial cells'),
+    T('Epithelial cells (/hpf)'),T('Yeast cells'),T('T. vaginalis'),
+    N('Actively motile','%'),N('Sluggishly motile','%'),N('Non-motile','%'),
+    N('Normal spermatozoa','%'),N('Broad head','%'),N('Pin head','%'),
+    N('Double head','%'),N('Curved neck','%'),
+    N('Total sperm density','x10⁶/mL',any(20,150))
+  ]),
+  mk('Culture & sensitivity (M/C/S)',[
+    S('Specimen',['Urine','HVS','Blood','Semen','Wound swab','Stool','Sputum','Other']),
+    T('Macroscopy'),
+    T('Pus cells (/hpf)'),T('Red blood cells'),T('Bacterial cells'),
+    T('Epithelial cells (/hpf)'),T('Yeast cells'),T('Crystals'),T('Casts'),T('T. vaginalis'),
+    T('Culture yielded'),
+    ...ABX.map(n=>S(n,AB,[],'S = +/++/+++'))
+  ])
+];
+
+/* ---------- Database & Session ---------- */
+/* ============ Online sync layer (shared server database) ============ */
+let db=null, session=null, encKey=null, TOKEN=sessionStorage.getItem('lims_tok')||'';
+let REV=0, SNAP={}, ES=null, dirty=false, offline=false, stale=false, flushing=false, pulling=false, again=false, retryT=null;
+const COLL={patients:()=>db.patients,orders:()=>db.orders,pay:()=>db.pay,qcmats:()=>db.qc.mats,qcruns:()=>db.qc.runs,tests:()=>db.tests,audit:()=>db.audit,brand:()=>db.brand};
+const ARRS=Object.assign({users:()=>db.users},COLL);
+const WRITE={admin:'patients orders pay qcmats qcruns tests audit meta brand',reception:'patients orders audit',cashier:'pay audit',phleb:'orders audit',lab:'orders qcmats qcruns audit',auditor:'audit'};
+const APPEND=['audit','qcruns'];
+const metaDoc=()=>({id:'meta',lab:db.lab,pre:db.pre,signer:db.signer||'',printMode:db.printMode||'blank',_v:db._mv});
+async function api(path,body){
+  let r;
+  try{ r=await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(TOKEN?{Authorization:'Bearer '+TOKEN}:{})},body:body===undefined?undefined:JSON.stringify(body)}); }
+  catch(_){ throw new Error('Cannot reach the server'); }
+  let j={}; try{ j=await r.json(); }catch(_){}
+  if(r.status===401 && TOKEN && path!=='/login') endSession('Your session has ended. Please sign in again.');
+  if(!r.ok){ const er=new Error(j.error||('Server error '+r.status)); er.status=r.status; throw er; }
+  return j;
+}
+function ensureNew(){
+  db.qc=db.qc||{mats:[],runs:[]};
+  if(db.printMode===undefined) db.printMode='blank';
+  if(db.letterhead===undefined) db.letterhead='';
+  if(db.letterfoot===undefined) db.letterfoot='';
+  db.pay=db.pay||[];
+  db.tests.forEach(t=>{ if(t.price===undefined) t.price=0; });
+  // Ensure Indeterminate on Reactive/Positive choice lists
+  db.tests.forEach(t=>{
+    (t.an||[]).forEach(a=>{
+      if(a.t!=='s' || !Array.isArray(a.o)) return;
+      const low=a.o.map(x=>String(x).toLowerCase());
+      const hasReact = low.some(x=>x.includes('reactive')||x==='positive');
+      const hasInd = low.some(x=>x.includes('indeterminate'));
+      if(hasReact && !hasInd) a.o.push('Indeterminate');
+    });
+  });
+  // Ensure HBV Profile panel exists with individual parameters
+  if(!db.tests.some(t=>t.id==='hbv-profile'||t.name==='HBV Profile')){
+    db.tests.push({
+      id:'hbv-profile',
+      name:'HBV Profile',
+      price:0,
+      an:[
+        {n:'HBsAg',t:'s',o:['Non-Reactive','Reactive','Indeterminate'],abn:['Reactive']},
+        {n:'HBsAb',t:'s',o:['Non-Reactive','Reactive','Indeterminate'],abn:['Reactive']},
+        {n:'HBeAg',t:'s',o:['Non-Reactive','Reactive','Indeterminate'],abn:['Reactive']},
+        {n:'HBeAb',t:'s',o:['Non-Reactive','Reactive','Indeterminate'],abn:['Reactive']},
+        {n:'HBcAb',t:'s',o:['Non-Reactive','Reactive','Indeterminate'],abn:['Reactive']}
+      ]
+    });
+  }
+  // Ensure combined PCV + Haemoglobin panel exists
+  if(!db.tests.some(t=>t.id==='pcv-haemoglobin'||t.name==='PCV + Haemoglobin')){
+    db.tests.push({
+      id:'pcv-haemoglobin',
+      name:'PCV + Haemoglobin',
+      price:0,
+      an:[
+        {n:'PCV',u:'%',t:'n',r:[['M',12,200,40,54],['F',12,200,36,47],['',0,12,32,42]]},
+        {n:'Hb',u:'g/dL',t:'n',r:[['M',12,200,13,18],['F',12,200,11.5,15.5],['',0,12,10.7,14.1]]}
+      ]
+    });
+  }
+}
+function defineBrand(){   // letterhead / letterfoot images live in the shared 'brand' collection
+  ['letterhead','letterfoot'].forEach(k=>Object.defineProperty(db,k,{enumerable:false,configurable:true,
+    get(){ const r=db.brand.find(x=>x.id===k); return r?r.data:''; },
+    set(v){ const r=db.brand.find(x=>x.id===k); if(r) r.data=v||''; else if(v) db.brand.push({id:k,data:v}); }}));
+}
+function applyState(s){
+  REV=s.rev; const d=s.data, m=(d.meta||[])[0], b=(d.bk||[])[0];
+  db={lab:m?m.lab:(session.role==='admin'?'KATCHA MEDICAL SERVICES':'Laboratory'),pre:m?m.pre||'':'',signer:m?m.signer||'':'',printMode:m?m.printMode||'blank':'blank',brand:d.brand||[],_mv:m?m._v:undefined,
+    settings:{backupIntervalDays:1,encEnabled:false,lastBackup:b?b.when:null,lastBackupChecksum:b?b.sha256:null,backupOk:b?b.ok:null},
+    patients:d.patients||[],orders:d.orders||[],pay:d.pay||[],qc:{mats:d.qcmats||[],runs:d.qcruns||[]},tests:d.tests||[],users:d.users||[],audit:d.audit||[]};
+  defineBrand();
+  SNAP={}; for(const c in ARRS){ SNAP[c]={}; ARRS[c]().forEach(r=>SNAP[c][r.id]=JSON.stringify(r)); }
+  SNAP.meta=m?JSON.stringify(metaDoc()):null;
+  if(session.role==='admin') CAT.forEach(c=>{ if(!db.tests.some(t=>t.id===c.id)) db.tests.push(JSON.parse(JSON.stringify(c))); });
+  ensureNew();
+}
+function persist(){ dirty=true; clearTimeout(persist.t); persist.t=setTimeout(flush,100); setSync(); }
+async function flush(){
+  if(flushing||!session||!db) return; flushing=true;
+  try{
+    for(;;){
+      const ch=[], live=[], w=(WRITE[session.role]||'').split(' ');
+      for(const c in COLL){
+        if(!w.includes(c)) continue;
+        const cur={}; COLL[c]().forEach(r=>cur[r.id]=r);
+        for(const id in cur){ const s=JSON.stringify(cur[id]); if(APPEND.includes(c)?!(id in SNAP[c]):SNAP[c][id]!==s){ ch.push({c,id,op:'upsert',doc:JSON.parse(s)}); live.push(cur[id]); } }
+        if(!APPEND.includes(c)) for(const id in SNAP[c]) if(!cur[id]){ ch.push({c,id,op:'delete'}); live.push(null); }
+      }
+      if(w.includes('meta')){ const m=JSON.stringify(metaDoc()); if(SNAP.meta!==m){ ch.push({c:'meta',id:'meta',op:'upsert',doc:JSON.parse(m)}); live.push(null); } }
+      if(!ch.length) break;
+      const res=await api('/push',{changes:ch}); offline=false;
+      ch.forEach((x,i)=>{
+        const v=res.vers[i];
+        if(x.op==='delete'){ delete SNAP[x.c][x.id]; return; }
+        const cl=Object.assign({},x.doc,{_v:v});
+        if(x.c==='meta'){ db._mv=v; SNAP.meta=JSON.stringify(cl); return; }
+        if(ARRS[x.c]().find(r=>r.id===x.id)===live[i]){ live[i]._v=v; SNAP[x.c][x.id]=JSON.stringify(cl); }
+      });
+    }
+    dirty=false;
+  }catch(err){
+    if(err.status && err.status!==401){ alert('Your last change was not saved: '+err.message+'\nThe latest data from the server will now be loaded.'); try{ await resync(); }catch(_){} dirty=false; }
+    else if(!err.status){ offline=true; clearTimeout(retryT); retryT=setTimeout(flush,3000); }
+  }finally{ flushing=false; setSync(); }
+}
+async function resync(){ applyState(await api('/state')); if(dlg.open) dlg.close(); render(); }
+function setSync(){
+  const el=document.getElementById('syncind'); if(!el) return;
+  const live=ES&&ES.readyState===1;
+  el.textContent=offline?'● Offline – retrying':dirty?'● Saving…':live?'● Live':'● Reconnecting…';
+  el.style.color=offline?'#f87171':dirty?'#fbbf24':live?'#4ade80':'#fbbf24';
+}
+function connect(){
+  if(ES) ES.close();
+  ES=new EventSource('/api/events?t='+encodeURIComponent(TOKEN));
+  ES.onmessage=()=>pull(); ES.onopen=()=>{ pull(); setSync(); }; ES.onerror=()=>setSync();
+}
+async function pull(){
+  if(!session) return; if(pulling){ again=true; return; } pulling=true;
+  try{ applyChanges(await api('/changes?since='+REV)); }catch(_){}
+  pulling=false; if(again){ again=false; pull(); }
+}
+function applyChanges(r){
+  let ch=false;
+  for(const c in r.up) r.up[c].forEach(d=>{
+    if(c==='meta'){ if(!(db._mv>=d._v)){ db.lab=d.lab||db.lab; db.pre=d.pre||''; db.signer=d.signer||''; db.printMode=d.printMode||'blank'; db._mv=d._v; SNAP.meta=JSON.stringify(metaDoc()); ch=true; } return; }
+    if(c==='bk'){ db.settings.lastBackup=d.when; db.settings.lastBackupChecksum=d.sha256; db.settings.backupOk=d.ok; ch=true; return; }
+    const arr=ARRS[c]&&ARRS[c](); if(!arr) return;
+    const i=arr.findIndex(x=>x.id===d.id);
+    if(i<0){ if(c==='audit') arr.unshift(d); else arr.push(d); SNAP[c][d.id]=JSON.stringify(d); ch=true; }
+    else if(d._v>(arr[i]._v||0)){ arr[i]=d; SNAP[c][d.id]=JSON.stringify(d); ch=true; }
+  });
+  for(const c in r.del) r.del[c].forEach(id=>{
+    const arr=ARRS[c]&&ARRS[c](); if(!arr) return;
+    const i=arr.findIndex(x=>x.id===id); if(i>=0){ arr.splice(i,1); ch=true; }
+    if(SNAP[c]) delete SNAP[c][id];
+  });
+  REV=r.rev;
+  if(ch){ if(dlg.open) stale=true; else render(); }
+}
+function log(action, details=''){
+  if(!session||!db) return;
+  db.audit.unshift({id:uid(),ts:nowISO(),user:session.username,role:session.role,action,details:String(details).slice(0,500)});
+  persist();
+}
+
+/* ---------- Encryption of patient PHI ---------- */
+async function ensureEncKey(passphrase){
+  if(!db.settings.encSalt){
+    db.settings.encSalt = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+  }
+  encKey = await deriveKey(passphrase, db.settings.encSalt);
+  db.settings.encEnabled = true;
+  persist();
+}
+
+async function encryptPatient(p){
+  if(!encKey || !db.settings.encEnabled) return p;
+  const copy = {...p};
+  for(const f of ['name','phone','addr','dob']){
+    if(copy[f] && !String(copy[f]).startsWith('ENC:')){
+      copy[f] = 'ENC:' + await encryptText(String(copy[f]), encKey);
+    }
+  }
+  return copy;
+}
+async function decryptPatient(p){
+  if(!encKey || !db.settings.encEnabled) return p;
+  const copy = {...p};
+  for(const f of ['name','phone','addr','dob']){
+    if(copy[f] && String(copy[f]).startsWith('ENC:')){
+      try{ copy[f] = await decryptText(copy[f].slice(4), encKey); }
+      catch(_){ copy[f] = '[encrypted]'; }
+    }
+  }
+  return copy;
+}
+async function getPatients(){
+  const list = [];
+  for(const p of db.patients) list.push(await decryptPatient(p));
+  return list;
+}
+async function getPatient(id){
+  const p = db.patients.find(x=>x.id===id);
+  return p ? await decryptPatient(p) : null;
+}
+
+/* ---------- Roles & Permissions ---------- */
+const ROLES = {
+  admin:      {label:'Administrator', can:['*']},
+  reception:  {label:'Reception',     can:['patients.view','patients.edit','orders.view','orders.create','results.view','results.print']},
+  cashier:    {label:'Cashier',       can:['patients.view','orders.view','fund.view','fund.edit']},
+  phleb:      {label:'Phlebotomist',  can:['patients.view','orders.view','orders.sample']},
+  lab:        {label:'Lab Scientist', can:['patients.view','orders.view','results.edit','results.print','tests.view','audit.view','qc.view','qc.edit']},
+  auditor:    {label:'Auditor',       can:['patients.view','orders.view','results.view','audit.view','backup.export','qc.view','fund.view']}
+};
+function can(perm){
+  if(!session) return false;
+  const r = ROLES[session.role];
+  if(!r) return false;
+  if(r.can.includes('*')) return true;
+  return r.can.includes(perm);
+}
+function roleBadge(role){
+  const map = {admin:'admin',lab:'lab',phleb:'phleb',reception:'reception',cashier:'cashier',auditor:'auditor'};
+  return `<span class="badge ${map[role]||''}">${e(ROLES[role]?.label||role)}</span>`;
+}
+
+/* ---------- Auth ---------- */
+async function doLogin(){
+  const u=document.getElementById('lu').value.trim().toLowerCase(), p=document.getElementById('lp').value;
+  const err=document.getElementById('login-err'); err.style.display='none';
+  if(!u||!p||!document.getElementById('lf').value.trim()){ err.textContent='Enter facility code, username and password'; err.style.display='block'; return; }
+  try{
+    const r=await api('/login',{facility:document.getElementById('lf').value.trim().toLowerCase(),username:u,password:p}); localStorage.setItem('lims_fac',document.getElementById('lf').value.trim().toLowerCase());
+    TOKEN=r.token; sessionStorage.setItem('lims_tok',TOKEN); session=r.user; await startApp();
+  }catch(ex){ err.textContent=ex.message; err.style.display='block'; }
+}
+async function startApp(){
+  applyState(await api('/state'));
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='flex';
+  await refreshSub(); clearInterval(subT); subT=setInterval(refreshSub,60000);
+  page='dash'; connect(); render(); persist();
+}
+function endSession(msg){
+  clearInterval(subT); SUB=null;
+  if(ES){ ES.close(); ES=null; }
+  session=null; db=null; TOKEN=''; sessionStorage.removeItem('lims_tok');
+  document.getElementById('app').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('lu').value=''; document.getElementById('lp').value='';
+  const er=document.getElementById('login-err'); if(msg){ er.textContent=msg; er.style.display='block'; }
+}
+async function doLogout(){ if(dirty) await flush(); try{ await api('/logout',{}); }catch(_){} endSession(); }
+function changePw(){
+  openDlg(`<h3>Change password</h3><div class="f"><div class="full"><label>Current password</label><input type="password" id="pw0" autocomplete="current-password"></div>
+  <div class="full"><label>New password (at least 8 characters)</label><input type="password" id="pw1" autocomplete="new-password"></div></div>
+  <div class="bar" style="margin-top:18px"><button class="b" onclick="savePw()">Save</button><button class="b g" data-close>Cancel</button></div>`);
+}
+async function savePw(){
+  try{ await api('/password',{old:document.getElementById('pw0').value,new:document.getElementById('pw1').value}); closeDlg(); alert('Password changed.'); }
+  catch(ex){ alert(ex.message); }
+}
+
+/* ---------- Navigation ---------- */
+let page = 'dash';
+const ALL_PAGES = [
+  {id:'dash',     label:'Dashboard',     perm:null},
+  {id:'patients', label:'Patients',      perm:'patients.view'},
+  {id:'orders',   label:'Orders',        perm:'orders.view'},
+  {id:'results',  label:'Results',       perm:'results.edit'},
+  {id:'tests',    label:'Test Catalogue',perm:'tests.view'},
+  {id:'qc',       label:'Quality Control',perm:'qc.view'},
+  {id:'fund',     label:'Fund Inflow',   perm:'fund.view'},
+  {id:'users',    label:'Users',         perm:'*'},          // admin only
+  {id:'subscription', label:'Subscription', perm:'*'},
+  {id:'audit',    label:'Audit Log',     perm:'audit.view'},
+  {id:'backup',   label:'Backup & Security', perm:'*'},
+  {id:'settings', label:'Settings',      perm:'*'}
+];
+
+function nav(){
+  const el = document.getElementById('nav');
+  const pages = ALL_PAGES.filter(p => !p.perm || can(p.perm) || (p.perm==='*' && session.role==='admin'));
+  el.innerHTML = `
+    <h1>${e(db.lab)}<br><small>myLab LIMS</small></h1>
+    <div class="user-info">
+      <b>${e(session.name)}</b>
+      ${roleBadge(session.role)} · ${e(session.username)}
+      <br><span id="syncind"></span> · <a href="#" onclick="changePw();return false" style="color:#7dd3fc">Change password</a>
+    </div>
+    ${pages.map(p=>`<button class="${page===p.id?'on':''}" data-p="${p.id}">${p.label}</button>`).join('')}
+    <button class="logout" onclick="doLogout()">Sign Out</button>
+  `;
+  el.querySelectorAll('button[data-p]').forEach(b=>b.onclick=()=>{page=b.dataset.p;render();});
+}
+
+/* ---------- Helpers ---------- */
+function hasAge(p){ return p && p.age!==undefined && p.age!==null && p.age!=='' && !isNaN(parseFloat(p.age)); }
+function ageYears(p){
+  if(p && p.ageY!=null && !isNaN(p.ageY)) return parseFloat(p.ageY);
+  if(hasAge(p)) return p.au==='m' ? parseFloat(p.age)/12 : parseFloat(p.age);
+  if(p && p.dob){ const d=new Date(p.dob); if(!isNaN(d)) return (Date.now()-d)/31557600000; }
+  return 30; // unknown age: adult range
+}
+function ageParts(p){ // {n, u} as entered, or derived from an old date of birth
+  if(hasAge(p)) return {n:parseInt(p.age), u:p.au==='m'?'m':'y'};
+  if(p && p.dob && !isNaN(new Date(p.dob))){ const y=ageYears(p); return y<2?{n:Math.floor(y*12),u:'m'}:{n:Math.floor(y),u:'y'}; }
+  return null;
+}
+function ageText(p){ const a=ageParts(p); return a? a.n+(a.u==='m'?' mths':' yrs') : ''; }
+function ageSex(p){ const a=ageText(p); return a ? `${a} / ${p.sex||''}` : (p?.sex||''); }
+function statusOf(o){
+  if(!o.results||!Object.keys(o.results).length) return 'Pending';
+  const tests = o.tests||[];
+  const done = tests.every(tid=>{
+    const t = db.tests.find(x=>x.id===tid);
+    if(!t) return true;
+    return t.an.every(a => o.results[tid] && o.results[tid][a.n]!==undefined && o.results[tid][a.n]!=='');
+  });
+  return done ? 'Completed' : 'Progress';
+}
+function flag(val, analyte, patient){
+  if(analyte.t!=='n'||val===''||val==null) return '';
+  if(/^[<>]/.test(String(val))) return ''; // allow free-text inequalities
+  const num = parseFloat(val); if(isNaN(num)) return '';
+  const sex = (patient?.sex||'').toUpperCase().startsWith('M')?'M':(patient?.sex||'').toUpperCase().startsWith('F')?'F':'';
+  const age = ageYears(patient);
+  for(const [s,amin,amax,lo,hi] of (analyte.r||[])){
+    if(s && s!==sex) continue;
+    if(age < amin || age >= amax) continue; // upper bound exclusive (matches original)
+    if(lo != null && num < lo) return 'L';
+    if(hi != null && num > hi) return 'H';
+    return '';
+  }
+  return '';
+}
+function isAbnormal(val, analyte){
+  return analyte.t==='s' && analyte.abn && analyte.abn.includes(val);
+}
+function refText(analyte, patient){
+  const sex = (patient?.sex||'').toUpperCase().startsWith('M')?'M':(patient?.sex||'').toUpperCase().startsWith('F')?'F':'';
+  const age = ageYears(patient);
+  const rules = analyte.r||[];
+  const r = rules.find(([s,amin,amax]) => (!s||s===sex) && age>=amin && age<amax) || rules[0];
+  if(r){
+    const [, , , lo, hi] = r;
+    if(lo != null && hi != null) return lo+' – '+hi;
+    if(hi == null && lo != null) return '≥ '+lo;
+    if(lo == null && hi != null) return '≤ '+hi;
+  }
+  // Fall back to note only if it is a real reference note (not an "Auto:" formula)
+  if(analyte.x && !String(analyte.x).startsWith('Auto')) return analyte.x;
+  return '';
+}
+
+/* ---------- Dialog ---------- */
+const dlg = document.getElementById('dlg');
+function openDlg(html){
+  dlg.innerHTML = html;
+  dlg.showModal();
+  dlg.querySelector('[data-close]')?.addEventListener('click',()=>dlg.close());
+}
+function closeDlg(){ dlg.close(); }
+dlg.addEventListener('close',()=>{ if(stale){ stale=false; render(); } });
+
+/* ---------- Dashboard ---------- */
+async function viewDash(){
+  const patients = await getPatients();
+  const totalP = patients.length;
+  const totalO = db.orders.length;
+  const pending = db.orders.filter(o=>statusOf(o)==='Pending').length;
+  const progress = db.orders.filter(o=>statusOf(o)==='Progress').length;
+  const done = db.orders.filter(o=>statusOf(o)==='Completed').length;
+  const lastBackup = db.settings.lastBackup ? new Date(db.settings.lastBackup).toLocaleString() : 'Never';
+  const daysSince = db.settings.lastBackup ? Math.floor((Date.now()-new Date(db.settings.lastBackup))/86400000) : 999;
+  const backupWarn = daysSince >= (db.settings.backupIntervalDays||7);
+
+  return `
+    <h2>Dashboard</h2>
+    ${backupWarn && can('*') ? `<div class="alert warn">Backup overdue (${daysSince} days since last verified backup). Please create a backup in <b>Backup & Security</b>.</div>` : ''}
+    <div class="st">
+      <div><b>${totalP}</b>Patients</div>
+      <div><b>${totalO}</b>Orders</div>
+      <div><b>${pending}</b>Pending</div>
+      <div><b>${progress}</b>In Progress</div>
+      <div><b>${done}</b>Completed</div>
+    </div>
+    ${dashExtra()}
+    <p class="muted">Last verified backup: ${e(lastBackup)} · Live sync: ${ES&&ES.readyState===1?'ON':'reconnecting'}</p>
+    <h3>Recent Orders</h3>
+    ${await orderTable(db.orders.slice().reverse().slice(0,8))}
+  `;
+}
+
+/* ---------- Patients ---------- */
+async function viewPatients(){
+  if(!can('patients.view')) return '<p class="empty">Access denied</p>';
+  const q = (document.getElementById('pq')?.value||'').toLowerCase();
+  let list = (await getPatients()).slice().reverse();
+  if(q) list = list.filter(p=>(p.name+p.phone+(p.pid||p.id)).toLowerCase().includes(q));
+
+  return `
+    <h2>Patients</h2>
+    <div class="bar">
+      <input id="pq" placeholder="Search name / phone / ID…" value="${e(q)}" style="min-width:220px">
+      <button class="b" onclick="render()">Search</button>
+      ${can('patients.edit')||can('*')?`<button class="b" onclick="editPatient()">+ New Patient</button>`:''}
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Sex / Age</th><th>Phone</th><th>Registered</th><th></th></tr></thead>
+        <tbody>
+          ${list.length?list.map(p=>`
+            <tr class="k" onclick="editPatient('${p.id}')">
+              <td>${e(p.pid||p.id)}</td>
+              <td>${e(p.name)}</td>
+              <td>${e(ageSex(p))}</td>
+              <td>${e(p.phone||'')}</td>
+              <td>${e(p.reg||'')}</td>
+              <td class="actions" onclick="event.stopPropagation()">
+                <button class="b g" onclick="editPatient('${p.id}')">View/Edit</button>
+                ${can('*')?`<button class="b d" onclick="delPatient('${p.id}')">Delete</button>`:''}
+              </td>
+            </tr>`).join(''):'<tr><td colspan="6" class="empty">No patients yet</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function editPatient(id){
+  if(!can('patients.edit') && !can('*') && !can('patients.view')) return alert('Access denied');
+  const p = id ? await getPatient(id) : null;
+  const readonly = !can('patients.edit') && !can('*');
+  openDlg(`
+    <h3>${p?'Patient':'New Patient'}</h3>
+    <div class="f">
+      <div><label>Full Name *</label><input id="pn" value="${e(p?.name||'')}" ${readonly?'readonly':''}></div>
+      <div><label>Phone</label><input id="pp" value="${e(p?.phone||'')}" ${readonly?'readonly':''}></div>
+      <div><label>Sex</label>
+        <select id="ps" ${readonly?'disabled':''}>
+          <option value="">—</option>
+          <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option>
+          <option value="Female" ${p?.sex==='Female'?'selected':''}>Female</option>
+        </select>
+      </div>
+      <div><label>Age *</label>
+        <div style="display:flex;gap:6px">
+          <input type="number" id="pd" min="0" step="1" style="flex:1" value="${e(ageParts(p)?.n??'')}" ${readonly?'readonly':''}>
+          <select id="pu" style="flex:1" ${readonly?'disabled':''}>
+            <option value="y" ${(ageParts(p)?.u||'y')==='y'?'selected':''}>Years</option>
+            <option value="m" ${ageParts(p)?.u==='m'?'selected':''}>Months</option>
+          </select>
+        </div>
+      </div>
+      <div class="full"><label>Address / Notes</label><textarea id="pa" rows="2" ${readonly?'readonly':''}>${e(p?.addr||'')}</textarea></div>
+    </div>
+    <div class="bar" style="margin-top:18px">
+      ${!readonly?`<button class="b" onclick="savePatient('${p?.id||''}')">Save</button>`:''}
+      <button class="b g" data-close>Close</button>
+    </div>
+  `);
+}
+
+async function savePatient(id){
+  if(!can('patients.edit') && !can('*')) return alert('Access denied');
+  const name = document.getElementById('pn').value.trim();
+  if(!name) return alert('Name is required');
+  const ageRaw = document.getElementById('pd').value.trim(), au = document.getElementById('pu').value;
+  const ageN = Number(ageRaw);
+  if(ageRaw==='' || !Number.isInteger(ageN) || ageN<0) return alert('Enter the age as a whole number.');
+  if(au==='m' && ageN>=24) return alert('Use years for ages of 2 or more.');
+  if(au==='y' && ageN>120) return alert('Check the age entered.');
+  const data = {
+    name,
+    phone: document.getElementById('pp').value.trim(),
+    sex: document.getElementById('ps').value,
+    age: ageN, au,
+    dob: '', // date of birth is no longer collected
+    addr: document.getElementById('pa').value.trim()
+  };
+  if(id){
+    const idx = db.patients.findIndex(x=>x.id===id);
+    if(idx<0) return;
+    const encrypted = await encryptPatient({...db.patients[idx], ...data});
+    db.patients[idx] = encrypted;
+    log('PATIENT_UPDATE', `Updated patient ${id} (${name})`);
+  } else {
+    let pn; try{ pn=(await api('/next',{name:'p'})).n; }catch(ex){ return alert('Cannot reach the server: '+ex.message); }
+    const raw = {
+      id: uid(),
+      pid: 'P'+String(pn).padStart(4,'0'),
+      reg: today(),
+      ...data
+    };
+    db.patients.push(await encryptPatient(raw));
+    log('PATIENT_CREATE', `Created patient ${raw.pid} (${name})`);
+  }
+  persist();
+  closeDlg();
+  render();
+}
+
+function delPatient(id){
+  if(!can('*')) return alert('Access denied');
+  if(!confirm('Delete this patient and all related orders?')) return;
+  const p = db.patients.find(x=>x.id===id);
+  db.patients = db.patients.filter(x=>x.id!==id);
+  db.orders = db.orders.filter(o=>o.pid!==id);
+  log('PATIENT_DELETE', `Deleted patient ${id} (${p?.name||''})`);
+  persist();
+  render();
+}
+
+/* ---------- Orders ---------- */
+async function orderTable(list){
+  const patients = await getPatients();
+  return `
+    <div class="tw">
+      <table>
+        <thead><tr><th>Order #</th><th>Patient</th><th>Tests</th><th>Date</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${list.length?list.map(o=>{
+            const p = patients.find(x=>x.id===o.pid);
+            const st = statusOf(o);
+            return `
+              <tr class="k">
+                <td>${e(o.oid||o.id)}</td>
+                <td>${e(p?.name||'—')}</td>
+                <td>${(o.tests||[]).map(tid=>e(db.tests.find(t=>t.id===tid)?.name||tid)).join(', ')}</td>
+                <td>${e(o.date||'')}</td>
+                <td><span class="tag ${st}">${st}</span> ${can('fund.view')?payTag(o):''}</td>
+                <td class="actions">
+                  <button class="b g" onclick="viewOrder('${o.id}')">View</button>
+                  ${can('orders.sample')||can('*')?`<button class="b" onclick="sampleDlg('${o.id}')">${o.sample?.collected?'Sample ✓':'Collect sample'}</button>`:''}
+                  ${can('results.edit')||can('*')?`<button class="b" onclick="enterResults('${o.id}')">Results</button>`:''}
+                  ${can('results.print')||can('*')||can('results.view')?`<button class="b s" onclick="printReport('${o.id}')">Print</button>
+                  <button class="b g" onclick="exportReport('${o.id}','pdf')">PDF</button>
+                  <button class="b g" onclick="exportReport('${o.id}','jpg')">JPG</button>
+                  <button class="b" onclick="sendReport('${o.id}','jpg')">Send</button>`:''}
+                </td>
+              </tr>`;
+          }).join(''):'<tr><td colspan="6" class="empty">No orders</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function viewOrders(){
+  if(!can('orders.view')) return '<p class="empty">Access denied</p>';
+  return `
+    <h2>Orders</h2>
+    <div class="bar">
+      ${can('orders.create')||can('*')?`<button class="b" onclick="newOrder()">+ New Order</button>`:''}
+    </div>
+    ${await orderTable(db.orders.slice().reverse())}
+  `;
+}
+
+async function newOrder(){
+  if(!can('orders.create')&&!can('*')) return alert('Access denied');
+  const patients = await getPatients();
+  if(!patients.length) return alert('Register a patient first');
+  openDlg(`
+    <h3>New Order</h3>
+    <div class="f">
+      <div class="full"><label>Patient *</label>
+        <select id="op">
+          ${patients.slice().reverse().map(p=>`<option value="${p.id}">${e(p.pid||'')} – ${e(p.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="full"><label>Select Tests *</label>
+        <div class="chk" id="otests" onchange="updTot()">
+          ${db.tests.map(t=>`<label><input type="checkbox" value="${t.id}"> ${e(t.name)} ${t.price?`<small class="muted">${money(t.price)}</small>`:''}</label>`).join('')}
+        </div>
+      </div>
+      <div class="full"><b>Total: <span id="otot">₦0</span></b></div>
+      <div><label>Order Date</label><input type="date" id="od" value="${today()}"></div>
+      <div><label>Clinical Notes</label><input id="on" placeholder="Optional"></div>
+    </div>
+    <div class="bar" style="margin-top:18px">
+      <button class="b" onclick="saveOrder()">Create Order</button>
+      <button class="b g" data-close>Cancel</button>
+    </div>
+  `);
+}
+
+async function saveOrder(){
+  if(!can('orders.create')&&!can('*')) return alert('Access denied');
+  const pid = document.getElementById('op').value;
+  const tests = [...document.querySelectorAll('#otests input:checked')].map(c=>c.value);
+  if(!tests.length) return alert('Select at least one test');
+  let on; try{ on=(await api('/next',{name:'o'})).n; }catch(ex){ return alert('Cannot reach the server: '+ex.message); }
+  const oid = 'ORD'+String(on).padStart(4,'0');
+  db.orders.push({
+    id: uid(),
+    oid,
+    pid,
+    tests,
+    date: document.getElementById('od').value||today(),
+    notes: document.getElementById('on').value.trim(),
+    results: {},
+    total: tests.reduce((t,id)=>t+(+db.tests.find(x=>x.id===id)?.price||0),0),
+    sample: { collected:false, type:'', nature:'', collectedAt:'', collectedBy:'' },
+    created: nowISO(),
+    createdBy: session.username
+  });
+  log('ORDER_CREATE', `Created order ${oid}`);
+  persist();
+  closeDlg();
+  page='orders';
+  render();
+}
+
+async function viewOrder(id){
+  const o = db.orders.find(x=>x.id===id);
+  if(!o) return;
+  const p = await getPatient(o.pid);
+  const st = statusOf(o);
+  openDlg(`
+    <h3>Order ${e(o.oid)}</h3>
+    <p><b>Patient:</b> ${e(p?.name||'—')} (${e(ageSex(p))})<br>
+       <b>Date:</b> ${e(o.date)} &nbsp; <span class="tag ${st}">${st}</span><br>
+       <span class="muted">Created by ${e(o.createdBy||'—')}</span></p>
+    ${o.notes?`<p class="muted">${e(o.notes)}</p>`:''}
+    ${o.sample?.collected?`<p><b>Sample:</b> ${e(o.sample.type)} · ${e(o.sample.nature)}
+      <span class="muted">(${e(o.sample.collectedBy||'')} ${e(o.sample.collectedAt?new Date(o.sample.collectedAt).toLocaleString():'')})</span></p>`:
+      `<p class="muted">Sample not yet collected</p>`}
+    <h4>Requested Tests</h4>
+    <ul>${(o.tests||[]).map(tid=>`<li>${e(db.tests.find(t=>t.id===tid)?.name||tid)}</li>`).join('')}</ul>
+    <div class="bar">
+      ${can('orders.sample')||can('*')?`<button class="b" onclick="closeDlg();sampleDlg('${o.id}')">Sample collection</button>`:''}
+      ${can('results.edit')||can('*')?`<button class="b" onclick="closeDlg();enterResults('${o.id}')">Enter / Edit Results</button>`:''}
+      ${can('results.print')||can('*')||can('results.view')?`<button class="b s" onclick="closeDlg();printReport('${o.id}')">Print</button>
+      <button class="b g" onclick="closeDlg();exportReport('${o.id}','pdf')">Save PDF</button>
+      <button class="b g" onclick="closeDlg();exportReport('${o.id}','jpg')">Save JPG</button>
+      <button class="b" onclick="closeDlg();sendReport('${o.id}','jpg')">Send</button>`:''}
+      <button class="b g" data-close>Close</button>
+      ${can('*')?`<button class="b d" onclick="delOrder('${o.id}')">Delete</button>`:''}
+    </div>
+  `);
+}
+
+function delOrder(id){
+  if(!can('*')) return alert('Access denied');
+  if(!confirm('Delete this order?')) return;
+  const o = db.orders.find(x=>x.id===id);
+  db.orders = db.orders.filter(x=>x.id!==id);
+  log('ORDER_DELETE', `Deleted order ${o?.oid||id}`);
+  persist();
+  closeDlg();
+  render();
+}
+
+/* ---------- Results ---------- */
+async function viewResults(){
+  if(!can('results.edit')&&!can('*')) return '<p class="empty">Access denied</p>';
+  const pending = db.orders.filter(o=>statusOf(o)!=='Completed').reverse();
+  return `
+    <h2>Results Entry</h2>
+    <p class="muted">Orders that still need results</p>
+    ${await orderTable(pending)}
+  `;
+}
+
+
+/* ---------- Sample collection (Phlebotomist) ---------- */
+const SAMPLE_TYPES = ['Venous blood','Capillary blood','Arterial blood','Urine','Stool','Sputum','HVS','Wound swab','CSF','Semen','Aspirate','Other'];
+const SAMPLE_NATURES = ['Satisfactory','Clotted','Haemolysed','Insufficient','Lipaemic','Icteric','Contaminated','Delayed','Other'];
+
+function sampleDlg(id){
+  if(!can('orders.sample')&&!can('*')) return alert('Access denied');
+  const o = db.orders.find(x=>x.id===id); if(!o) return;
+  o.sample = o.sample || { collected:false, type:'', nature:'', collectedAt:'', collectedBy:'' };
+  const s = o.sample;
+  openDlg(`<h3>Sample collection – ${e(o.oid)}</h3>
+  <p class="muted">Record collection for this order. Sample type and nature are required when marking as collected.</p>
+  <div class="f">
+    <div class="full"><label><input type="checkbox" id="sc_yes" ${s.collected?'checked':''}> Sample collected</label></div>
+    <div><label>Sample type *</label>
+      <select id="sc_type"><option value="">—</option>${SAMPLE_TYPES.map(x=>`<option value="${e(x)}" ${s.type===x?'selected':''}>${e(x)}</option>`).join('')}</select>
+    </div>
+    <div><label>Nature / condition *</label>
+      <select id="sc_nat"><option value="">—</option>${SAMPLE_NATURES.map(x=>`<option value="${e(x)}" ${s.nature===x?'selected':''}>${e(x)}</option>`).join('')}</select>
+    </div>
+    <div class="full"><label>Notes</label><input id="sc_note" value="${e(s.note||'')}" placeholder="Optional"></div>
+  </div>
+  ${s.collected?`<p class="muted">Previously collected ${e(s.collectedAt||'')} by ${e(s.collectedBy||'')}</p>`:''}
+  <div class="bar" style="margin-top:18px">
+    <button class="b" onclick="saveSample('${id}')">Save</button>
+    <button class="b g" data-close>Cancel</button>
+  </div>`);
+}
+
+function saveSample(id){
+  if(!can('orders.sample')&&!can('*')) return alert('Access denied');
+  const o = db.orders.find(x=>x.id===id); if(!o) return;
+  const collected = document.getElementById('sc_yes').checked;
+  const type = document.getElementById('sc_type').value;
+  const nature = document.getElementById('sc_nat').value;
+  const note = document.getElementById('sc_note').value.trim();
+  if(collected && (!type || !nature)) return alert('Select sample type and nature');
+  o.sample = {
+    collected,
+    type: collected?type:'',
+    nature: collected?nature:'',
+    note,
+    collectedAt: collected ? (o.sample?.collectedAt || nowISO()) : '',
+    collectedBy: collected ? (o.sample?.collectedBy || session.username) : ''
+  };
+  if(collected && !o.sample.collectedAt) o.sample.collectedAt = nowISO();
+  if(collected) o.sample.collectedBy = o.sample.collectedBy || session.username;
+  log('SAMPLE_COLLECT', `${o.oid} ${collected?'collected':'cleared'} ${type} ${nature}`);
+  persist(); closeDlg(); render();
+}
+
+async function enterResults(id){
+  if(!can('results.edit')&&!can('*')) return alert('Access denied');
+  const o = db.orders.find(x=>x.id===id);
+  if(!o) return;
+  const p = await getPatient(o.pid);
+  o.results = o.results||{};
+  window._resultPatientAge = ageYears(p);
+  window._resultPatientFemale = ((p?.sex||'').toUpperCase().startsWith('F'));
+
+  let html = `<h3>Results – ${e(o.oid)} / ${e(p?.name||'')}</h3>
+    <p class="muted">Calculated fields (MCV, MCH, MCHC, RDW-CV/RDW-SD, BUN, ratio, eGFR) fill automatically. Remarks auto-generate from abnormal values and stay editable.</p>`;
+  (o.tests||[]).forEach(tid=>{
+    const t = db.tests.find(x=>x.id===tid);
+    if(!t) return;
+    o.results[tid] = o.results[tid]||{};
+    html += `<details open data-tid="${tid}"><summary>${e(t.name)}</summary><div class="f">`;
+    if(/renal/i.test(t.name)) html += `<div class="full"><button type="button" class="b g" onclick="recalcRenal('${tid}')">Recalculate BUN, BUN:Creatinine ratio &amp; eGFR</button> <span class="muted">uses Urea, Creatinine and the patient's age and sex</span></div>`;
+    if(/renal/i.test(t.name)){
+      if(window._resultPatientAge<18) html += `<div><label>Height (cm) – children, for eGFR</label><input type="number" step="any" data-tid="${tid}" data-an="Height (cm)" value="${e(o.results[tid]['Height (cm)']??'')}" oninput="onResultInput(this,'${tid}')"></div>`;
+      html += `<div class="full muted" id="egfrnote-${tid}" style="font-size:13px"></div>`;
+    }
+    t.an.forEach(a=>{
+      const val = o.results[tid][a.n]??'';
+      const hint = a.x ? ` <span class="muted">(${e(a.x)})</span>` : '';
+      if(a.t==='s'){
+        html += `<div><label>${e(a.n)}${hint}</label>
+          <select data-tid="${tid}" data-an="${e(a.n)}" onchange="onResultInput(this,'${tid}')">
+            <option value="">—</option>
+            ${a.o.map(opt=>`<option value="${e(opt)}" ${val===opt?'selected':''}>${e(opt)}</option>`).join('')}
+          </select></div>`;
+      } else if(a.t==='n'){
+        const isPcvHb = (t.id==='pcv-haemoglobin' || t.name==='PCV + Haemoglobin');
+        const autoHb = isPcvHb && a.n==='PCV';
+        html += `<div><label>${e(a.n)} ${a.u?'('+e(a.u)+')':''}${hint}${autoHb?' <span class="muted">(Hb = PCV÷3)</span>':''}</label>
+          <input type="number" step="any" data-tid="${tid}" data-an="${e(a.n)}" value="${e(val)}"
+            oninput="${autoHb?`autoHbFromPcv(this,'${tid}')`:`onResultInput(this,'${tid}')`}"></div>`;
+      } else if(a.n==='Remark'){
+        html += `<div class="full"><label>Remark (auto from abnormals – editable)</label>
+          <textarea data-tid="${tid}" data-an="Remark" rows="2" style="width:100%" oninput="markRemarkManual(this)">${e(val)}</textarea></div>`;
+      } else {
+        html += `<div class="full"><label>${e(a.n)}${hint}</label>
+          <input data-tid="${tid}" data-an="${e(a.n)}" value="${e(val)}" oninput="onResultInput(this,'${tid}')"></div>`;
+      }
+    });
+    // Ensure remark exists for every test panel
+    if(!(t.an||[]).some(a=>a.n==='Remark')){
+      const val = o.results[tid]['Remark']??'';
+      html += `<div class="full"><label>Remark (auto from abnormals – editable)</label>
+        <textarea data-tid="${tid}" data-an="Remark" rows="2" style="width:100%" oninput="markRemarkManual(this)">${e(val)}</textarea></div>`;
+    }
+    html += `</div></details>`;
+  });
+  html += `
+    <div class="bar" style="margin-top:16px">
+      <button class="b" onclick="saveResults('${o.id}')">Save Results</button>
+      <button class="b s" onclick="saveResults('${o.id}');printReport('${o.id}')">Save & Print</button>
+      <button class="b g" data-close>Cancel</button>
+    </div>`;
+  openDlg(html);
+  (o.tests||[]).forEach(tid=>autoCalcResults(tid));
+}
+
+/** Button: force BUN, BUN:Creatinine ratio and eGFR to be recalculated from Urea / Creatinine */
+function recalcRenal(tid){
+  const val = n => { const el=getResInput(tid,n); return el && el.value!=='' ? parseFloat(el.value) : NaN; };
+  const clear = n => { const el=getResInput(tid,n); if(el){ el.value=''; el.dataset.manual=''; el.dataset.auto=''; } };
+  const u = val('Urea'), c = val('Creatinine');
+  if(!isNaN(u)) clear('BUN (Blood Urea Nitrogen)');
+  if(!isNaN(u) || !isNaN(c)) clear('BUN (Creatinine Ratio)');
+  if(!isNaN(c)) clear('eGFR');
+  autoCalcResults(tid);
+}
+
+function autoHbFromPcv(el, tid){
+  const pcv = parseFloat(el.value);
+  const hbEl = document.querySelector('#dlg input[data-tid="'+tid+'"][data-an="Hb"]');
+  if(!hbEl) return;
+  if(el.value==='' || isNaN(pcv)) return;
+  hbEl.value = (Math.round((pcv/3)*10)/10).toFixed(1);
+  autoCalcResults(tid);
+}
+
+function getResInput(tid, name){
+  return [...document.querySelectorAll('#dlg [data-tid]')].find(el => el.dataset.tid===tid && el.dataset.an===name) || null;
+}
+
+function setResVal(tid, name, val, force){
+  const el = getResInput(tid, name);
+  if(!el) return;
+  if(!force && el.dataset.manual==='1' && el.value!=='') return;
+  if(val===''||val==null||isNaN(val)) return;
+  el.value = (typeof val==='number') ? (Math.round(val*100)/100) : val;
+  el.dataset.auto = '1';
+}
+
+/** Auto indices for FBC and Renal; then refresh remark */
+function autoCalcResults(tid){
+  const tdef = db.tests.find(x=>x.id===tid);
+  if(!tdef) return;
+  const g = n => {
+    const el = getResInput(tid, n);
+    if(!el || el.value==='') return NaN;
+    return parseFloat(el.value);
+  };
+
+  // --- FBC: MCV, MCH, MCHC ---
+  const pcv = g('PCV'), hb = g('Hb'), rbc = g('RBC');
+  if(!isNaN(pcv) && !isNaN(rbc) && rbc>0){
+    // MCV (fL) = (PCV % / RBC 10^12/L) × 10
+    setResVal(tid, 'MCV', (pcv/rbc)*10);
+  }
+  if(!isNaN(hb) && !isNaN(rbc) && rbc>0){
+    // MCH (pg) = (Hb g/dL / RBC) × 10
+    setResVal(tid, 'MCH', (hb/rbc)*10);
+  }
+  if(!isNaN(hb) && !isNaN(pcv) && pcv>0){
+    // MCHC (g/dL) = (Hb / PCV) × 100
+    setResVal(tid, 'MCHC', (hb/pcv)*100);
+  }
+
+  // --- Renal: BUN, BUN:Creatinine ratio, eGFR ---
+  // CKD-EPI 2021 for adults (18+); bedside Schwartz for children (needs height). Field names matched loosely.
+  const rn = re => { const el=[...document.querySelectorAll('#dlg [data-tid]')].find(x=>x.dataset.tid===tid && re.test(x.dataset.an||'')); return el?el.dataset.an:null; };
+  const nUrea=rn(/^urea$/i), nCr=rn(/^creatinine/i), nBun=rn(/^bun \(blood/i), nRat=rn(/ratio/i), nEg=rn(/^egfr/i);
+  const urea = nUrea?g(nUrea):NaN, creat = nCr?g(nCr):NaN;
+  if(nBun && !isNaN(urea)) setResVal(tid, nBun, urea*2.8);                       // BUN mg/dL = Urea mmol/L x 2.8
+  const bun = nBun?g(nBun):NaN;
+  if(nRat && !isNaN(bun) && !isNaN(creat) && creat>0) setResVal(tid, nRat, bun/creat);
+  let msg = '';
+  if(nEg && !isNaN(creat) && creat>0){
+    const age = window._resultPatientAge, female = !!window._resultPatientFemale;
+    if(creat>15){
+      msg = 'Creatinine '+creat+' looks like µmol/L. eGFR needs mg/dL (divide µmol/L by 88.4).';
+    } else if(age!=null && age>=18){
+      const k = female?0.7:0.9, al = female?-0.241:-0.302;
+      const egfr = 142 * Math.pow(Math.min(creat/k,1), al) * Math.pow(Math.max(creat/k,1), -1.200) * Math.pow(0.9938, age) * (female?1.012:1);
+      setResVal(tid, nEg, Math.round(egfr));
+      msg = 'eGFR by CKD-EPI 2021 (age '+Math.round(age)+' y, '+(female?'female':'male')+').';
+    } else if(age!=null){
+      const hEl = getResInput(tid,'Height (cm)'), h = hEl?parseFloat(hEl.value):NaN;
+      if(h>0){ setResVal(tid, nEg, Math.round(0.413*h/creat)); msg='eGFR by bedside Schwartz (child, height '+h+' cm).'; }
+      else msg='Patient is under 18. Enter height (cm) above to calculate eGFR (bedside Schwartz).';
+    }
+  }
+  const noteEl = document.getElementById('egfrnote-'+tid); if(noteEl) noteEl.textContent = msg;
+
+  autoRemark(tid);
+}
+
+function autoRemark(tid){
+  const remarkEl = getResInput(tid, 'Remark');
+  // If no Remark field, create nothing; some tests have Remark as T type
+  const tdef = db.tests.find(x=>x.id===tid);
+  if(!tdef) return;
+  const hasRemark = (tdef.an||[]).some(a=>a.n==='Remark');
+  // Always ensure a remark box exists via data attribute on a dedicated field
+  let box = document.querySelector('#dlg textarea[data-tid="'+tid+'"][data-an="Remark"]')
+         || document.querySelector('#dlg input[data-tid="'+tid+'"][data-an="Remark"]')
+         || document.getElementById('autoRemark_'+tid);
+  if(!box){
+    // inject editable remark area at end of this test's details if missing
+    const details = document.querySelector('#dlg details[data-tid="'+tid+'"]') || 
+      [...document.querySelectorAll('#dlg details')].find(d => d.querySelector('[data-tid="'+tid+'"]'));
+    if(details){
+      const wrap = document.createElement('div');
+      wrap.className = 'full';
+      wrap.style.gridColumn = '1 / -1';
+      wrap.innerHTML = `<label>Remark (auto from abnormals – editable)</label>
+        <textarea id="autoRemark_${tid}" data-tid="${tid}" data-an="Remark" rows="2" style="width:100%"></textarea>`;
+      details.querySelector('.f')?.appendChild(wrap);
+      box = wrap.querySelector('textarea');
+    }
+  }
+  if(!box) return;
+  // Don't overwrite if user manually edited after auto
+  if(box.dataset.manual==='1') return;
+
+  const p = { sex: window._resultPatientFemale ? 'Female' : 'Male', ageY: window._resultPatientAge };
+  const bits = [];
+  (tdef.an||[]).forEach(a=>{
+    if(a.n==='Remark') return;
+    const el = getResInput(tid, a.n);
+    if(!el || el.value==='') return;
+    const val = el.value;
+    if(a.t==='n'){
+      const fl = flag(val, a, {sex: p.sex, age: p.ageY, ageY: p.ageY});
+      // ageYears uses patient.dob or age fields – pass synthetic
+      const fl2 = flag(val, a, synthPatient(p.sex, p.ageY));
+      if(fl2==='L') bits.push(`Low ${a.n} (${val}${a.u?' '+a.u:''})`);
+      else if(fl2==='H') bits.push(`High ${a.n} (${val}${a.u?' '+a.u:''})`);
+    } else if(a.t==='s' && a.abn && a.abn.includes(val)){
+      bits.push(`${a.n}: ${val}`);
+    }
+  });
+
+  // Morphology-style hints for FBC
+  const name = (tdef.name||'').toLowerCase();
+  if(name.includes('full blood') || name.includes('fbc')){
+    const mcv = parseFloat(getResInput(tid,'MCV')?.value);
+    const mch = parseFloat(getResInput(tid,'MCH')?.value);
+    const mchc = parseFloat(getResInput(tid,'MCHC')?.value);
+    const hb = parseFloat(getResInput(tid,'Hb')?.value);
+    if(!isNaN(hb) && flag(hb, (tdef.an.find(a=>a.n==='Hb')||{t:'n',r:[]}), synthPatient(p.sex, p.ageY))==='L'){
+      let morph = '';
+      if(!isNaN(mcv) && mcv<76) morph = 'microcytic';
+      else if(!isNaN(mcv) && mcv>93) morph = 'macrocytic';
+      else morph = 'normocytic';
+      if(!isNaN(mchc) && mchc<31) morph += ' hypochromic';
+      else if(!isNaN(mch) && mch<27) morph += ' hypochromic';
+      else morph += ' normochromic';
+      bits.unshift(`Suggests ${morph} anemia`);
+    }
+  }
+
+  const text = bits.length ? bits.join('. ') + '.' : 'All reported parameters within reference range.';
+  box.value = text;
+}
+
+function synthPatient(sex, ageY){
+  return { sex: sex||'', age: ageY, ageY: ageY, ageUnit: 'y' };
+}
+
+function onResultInput(el, tid){
+  el.dataset.manual = el.dataset.auto==='1' ? '' : '1';
+  // if user types in auto field, mark manual
+  if(['MCV','MCH','MCHC','BUN (Blood Urea Nitrogen)','BUN (Creatinine Ratio)','eGFR'].includes(el.dataset.an)){
+    el.dataset.manual = '1';
+  }
+  autoCalcResults(tid);
+}
+
+function markRemarkManual(el){
+  el.dataset.manual = '1';
+}
+
+function saveResults(id){
+  if(!can('results.edit')&&!can('*')) return alert('Access denied');
+  const o = db.orders.find(x=>x.id===id);
+  if(!o) return;
+  o.results = o.results||{};
+  const touched = new Set();
+  document.querySelectorAll('#dlg [data-tid]').forEach(el=>{
+    const tid = el.dataset.tid;
+    const an = el.dataset.an;
+    if(!an) return;
+    o.results[tid] = o.results[tid]||{};
+    o.results[tid][an] = el.value;
+    if(el.value!=='' && el.value!=null) touched.add(tid);
+  });
+  touched.forEach(tid=>{
+    const res = o.results[tid];
+    const hasVal = Object.keys(res).some(k=>k!=='_meta' && res[k]!=='' && res[k]!=null);
+    if(!hasVal) return;
+    res._meta = {
+      by: session.username,
+      name: session.name || session.username,
+      initials: session.initials || '',
+      signature: session.signature || '',
+      role: session.role,
+      at: nowISO()
+    };
+  });
+  o.updated = nowISO();
+  o.updatedBy = session.username;
+  log('RESULTS_SAVE', `Saved results for order ${o.oid} by ${session.username}`);
+  persist();
+  closeDlg();
+  render();
+}
+
+/* ---------- Print / Export (letterhead, PDF, JPG, per-scientist sign) ---------- */
+
+function testHasResults(res, test){
+  if(!res) return false;
+  return (test.an||[]).some(a => res[a.n]!==undefined && res[a.n]!=='');
+}
+
+function safeFileName(name){
+  return String(name||'patient').replace(/[^\w\s\-().]/g,'').replace(/\s+/g,'_').slice(0,60) || 'patient';
+}
+
+function buildReportHtml(o, p, opts={}){
+  const useLh = !!(db.letterhead && db.printMode !== 'blank');
+  const readyTests = (o.tests||[]).map(tid=>{
+    const t = db.tests.find(x=>x.id===tid);
+    if(!t) return null;
+    const res = (o.results&&o.results[tid])||{};
+    if(!testHasResults(res, t)) return null;
+    return {tid, t, res, meta: res._meta||null};
+  }).filter(Boolean);
+
+  if(!readyTests.length) return null;
+
+  // Group by scientist (same signatory merge)
+  const groups = [];
+  const map = new Map();
+  readyTests.forEach(item=>{
+    const key = item.meta?.by || '_unknown';
+    if(!map.has(key)){
+      const g = {key, meta: item.meta, items:[]};
+      map.set(key, g);
+      groups.push(g);
+    }
+    map.get(key).items.push(item);
+  });
+
+
+  let body = '';
+  if(useLh && db.letterhead) body += `<img class="lh-img" src="${db.letterhead}" alt="Letterhead">`;
+  body += `<div class="report-body">`;
+  body += `<div style="text-align:center;font-size:12pt;font-weight:700;margin:0 0 12px;letter-spacing:0.5px;border-bottom:1.5px solid #333;padding-bottom:6px">LABORATORY INVESTIGATION REPORT</div>`;
+  body += `<div class="report-meta">
+      <div><b>Patient:</b> ${e(p?.name||'—')}</div>
+      <div><b>Order No:</b> ${e(o.oid)}</div>
+      <div><b>Sex / Age:</b> ${e(ageSex(p))}</div>
+      <div><b>Date:</b> ${e(o.date)}</div>
+      <div><b>Patient ID:</b> ${e(p?.pid||'')}</div>
+      <div><b>Status:</b> ${readyTests.length=== (o.tests||[]).length ? 'Completed' : 'Partial results'}</div>
+    </div>`;
+
+  let sigHtml = '';
+  groups.forEach(g=>{
+    g.items.forEach(({t, res})=>{
+      body += `<h4 style="margin:14px 0 4px;font-size:11pt;border-bottom:1px solid #666;padding-bottom:2px">${e(t.name)}</h4>
+        <table><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Flag</th><th>Reference</th></tr></thead><tbody>`;
+      t.an.forEach(a=>{
+        const val = res[a.n]??'';
+        if(val===''||val==null) return; // only print entered parameters
+        const fl = flag(val,a,p);
+        const abn = isAbnormal(val,a);
+        const flagTxt = fl||(abn?'A':'');
+        const ref = refText(a,p);
+        body += `<tr>
+          <td>${e(a.n)}</td>
+          <td class="${flagTxt}">${e(val)}</td>
+          <td>${e(a.u||'')}</td>
+          <td class="${flagTxt}">${flagTxt}</td>
+          <td style="font-size:9pt">${e(ref)}</td>
+        </tr>`;
+      });
+      body += `</tbody></table>`;
+    });
+    // Signature block per scientist (merged for same signer)
+    const meta = g.meta;
+    const nm = meta?.name || db.signer || 'Medical Laboratory Scientist';
+    const ini = meta?.initials ? ` (${e(meta.initials)})` : '';
+    const sig = meta?.signature || '';
+    const testsNames = g.items.map(i=>i.t.name).join(', ');
+    sigHtml += `<div class="sig-block">
+        ${sig?`<img class="sig" src="${sig}" alt="Signature">`:''}
+        <div class="tests-by">${e(testsNames)}</div>
+        <div class="name">${e(nm)}${ini}</div>
+        <div class="title">Medical Laboratory Scientist</div>
+        <div style="font-size:8pt;margin-top:2px">${meta?.at ? new Date(meta.at).toLocaleString() : new Date().toLocaleString()}</div>
+      </div>`;
+  });
+
+  body += `<div class="report-footer">
+    <div class="sig-row">${sigHtml}</div>
+  </div>`;
+
+  body += `</div>`; // report-body
+  if(useLh && db.letterfoot) body += `<img class="lh-foot" src="${db.letterfoot}" alt="">`;
+  return {html: body, useLh, readyCount: readyTests.length, total: (o.tests||[]).length};
+}
+
+async function printReport(id){
+  if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
+  const o = db.orders.find(x=>x.id===id);
+  if(!o) return;
+  const p = await getPatient(o.pid);
+  const built = buildReportHtml(o, p);
+  if(!built) return alert('No results available to print yet. Enter at least one test result first.');
+  const reportEl = document.getElementById('report');
+  reportEl.className = built.useLh ? 'with-lh' : '';
+  reportEl.innerHTML = built.html;
+  const prevTitle = document.title;
+  document.title = safeFileName(p?.name||o.oid) + '_Lab_Report';
+  log('REPORT_PRINT', `Printed ${built.readyCount}/${built.total} tests for order ${o.oid}`);
+  window.print();
+  setTimeout(()=>{ document.title = prevTitle; }, 500);
+}
+
+async function exportReport(id, format){
+  if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
+  const o = db.orders.find(x=>x.id===id);
+  if(!o) return;
+  const p = await getPatient(o.pid);
+  const built = buildReportHtml(o, p);
+  if(!built) return alert('No results available to export yet.');
+  const reportEl = document.getElementById('report');
+  reportEl.className = built.useLh ? 'with-lh' : '';
+  reportEl.innerHTML = built.html;
+  reportEl.style.display = 'block';
+  const fname = safeFileName(p?.name||o.oid) + '_Lab_Report';
+  if(format==='pdf'){
+    const prevTitle = document.title;
+    document.title = fname;
+    log('REPORT_PDF', `Export PDF ${fname} order ${o.oid}`);
+    window.print(); // user chooses "Save as PDF"
+    setTimeout(()=>{ document.title = prevTitle; reportEl.style.display=''; }, 800);
+    alert('In the print dialog, choose "Save as PDF" / "Microsoft Print to PDF" to download the file named after the patient.');
+    return;
+  }
+  if(format==='jpg' || format==='png'){
+    try{
+      await document.fonts.ready;
+      const canvas = await htmlToCanvas(reportEl);
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/jpeg', 0.92);
+      a.download = fname + '.jpg';
+      a.click();
+      log('REPORT_JPG', `Export JPG ${fname} order ${o.oid}`);
+    }catch(err){
+      alert('Could not create image: '+(err.message||err));
+    }
+    reportEl.style.display = '';
+  }
+}
+
+async function sendReport(id, format){
+  if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
+  const o = db.orders.find(x=>x.id===id);
+  if(!o) return;
+  const p = await getPatient(o.pid);
+  const built = buildReportHtml(o, p);
+  if(!built) return alert('No results available to send yet.');
+  const reportEl = document.getElementById('report');
+  reportEl.className = built.useLh ? 'with-lh' : '';
+  reportEl.innerHTML = built.html;
+  reportEl.style.display = 'block';
+  const fname = safeFileName(p?.name||o.oid) + '_Lab_Report';
+  try{
+    await document.fonts.ready;
+    const canvas = await htmlToCanvas(reportEl);
+    const blob = await new Promise(res=> canvas.toBlob(res, format==='pdf'?'image/jpeg':'image/jpeg', 0.92));
+    const file = new File([blob], fname + (format==='pdf'?'.jpg':'.jpg'), {type:'image/jpeg'});
+    reportEl.style.display = '';
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({
+        files: [file],
+        title: 'Lab Report – '+(p?.name||''),
+        text: `Laboratory report for ${p?.name||''} (${p?.pid||''}) order ${o.oid}`
+      });
+      log('REPORT_SEND', `Shared report order ${o.oid}`);
+    } else {
+      // fallback download + mailto tip
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = file.name;
+      a.click();
+      alert('File downloaded as '+file.name+'.\\nAttach it in WhatsApp, Email or SMS to send to the patient.\\n(This browser does not support direct share with files.)');
+      log('REPORT_SEND_DOWNLOAD', `Downloaded for send order ${o.oid}`);
+    }
+  }catch(err){
+    reportEl.style.display = '';
+    if(String(err.name)==='AbortError') return;
+    alert('Send failed: '+(err.message||err));
+  }
+}
+
+function htmlToCanvas(el){
+  // Render element to canvas via SVG foreignObject
+  const rect = el.getBoundingClientRect();
+  const width = Math.max(el.scrollWidth, 794); // ~A4 width at 96dpi
+  const height = Math.max(el.scrollHeight, 400);
+  const clone = el.cloneNode(true);
+  clone.style.display = 'block';
+  clone.style.width = width+'px';
+  clone.style.background = '#fff';
+  clone.style.position = 'static';
+  const ser = new XMLSerializer().serializeToString(clone);
+  // wrap images as-is (data URLs work)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+    <foreignObject width="100%" height="100%">
+      <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Times New Roman,serif;background:#fff">${ser}</div>
+    </foreignObject></svg>`;
+  const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml;charset=utf-8'}));
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0,0,width,height);
+      ctx.drawImage(img,0,0);
+      URL.revokeObjectURL(url);
+      resolve(canvas);
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('Image render failed')); };
+    img.src = url;
+  });
+}
+
+function reportActions(oid){
+  if(!(can('results.print')||can('*')||can('results.view'))) return '';
+  return `<div class="bar" style="margin-top:8px;flex-wrap:wrap">
+    <button class="b s" onclick="printReport('${oid}')">Print</button>
+    <button class="b g" onclick="exportReport('${oid}','pdf')">Save PDF</button>
+    <button class="b g" onclick="exportReport('${oid}','jpg')">Save JPG</button>
+    <button class="b" onclick="sendReport('${oid}','jpg')">Send</button>
+  </div>`;
+}
+
+/* ---------- Test Catalogue ---------- */
+function viewTests(){
+  if(!can('tests.view')&&!can('*')) return '<p class="empty">Access denied</p>';
+  const adm=can('*');
+  return `<h2>Test Catalogue</h2>
+  <p class="muted">${db.tests.length} tests available.${adm?' Set prices (₦) for billing. You can also add new tests below.':''}</p>
+  ${adm?`<div class="bar"><button class="b" onclick="addTestDlg()">+ Add test</button></div>`:''}
+  <div class="tw"><table><thead><tr><th>Test</th><th>Parameters</th><th>Price (₦)</th>${adm?'<th></th>':''}</tr></thead><tbody>
+  ${db.tests.map(t=>`<tr>
+    <td>${e(t.name)}</td>
+    <td style="white-space:normal;max-width:360px">${t.an.map(a=>e(a.n)).join(', ')}</td>
+    <td>${adm?`<input type="number" min="0" step="50" value="${t.price||0}" style="width:110px" onchange="setPrice('${t.id}',this.value)">`:money(t.price)}</td>
+    ${adm?`<td class="actions"><button class="b g" onclick="editTestDlg('${t.id}')">Edit</button>
+      ${!CAT.some(c=>c.id===t.id)?`<button class="b d" onclick="delTest('${t.id}')">Remove</button>`:''}</td>`:''}
+  </tr>`).join('')}</tbody></table></div>
+  ${adm?`<p class="muted">Built-in catalogue tests cannot be removed (only custom ones). Editing changes the name, price and simple parameters for new orders.</p>`:''}`;
+}
+
+function addTestDlg(){
+  if(!can('*')) return alert('Access denied');
+  openDlg(`<h3>Add test to catalogue</h3>
+  <p class="muted">Add a single-parameter test or a multi-parameter panel (e.g. HBV Profile with HBsAg, HBsAb, HBeAg…).</p>
+  <div class="f">
+    <div class="full"><label>Test / panel name *</label><input id="tn" placeholder="e.g. HBV Profile"></div>
+    <div><label>Price (₦)</label><input type="number" min="0" step="50" id="tp" value="0"></div>
+  </div>
+  <h4>Parameters</h4>
+  <div id="paramRows"></div>
+  <div class="bar"><button class="b g" type="button" onclick="addParamRow()">+ Add parameter</button></div>
+  <div class="bar" style="margin-top:18px"><button class="b" onclick="saveNewTest()">Save test</button><button class="b g" data-close>Cancel</button></div>`);
+  addParamRow();
+}
+
+function addParamRow(){
+  const box = document.getElementById('paramRows');
+  if(!box) return;
+  const i = box.children.length;
+  const div = document.createElement('div');
+  div.className = 'f';
+  div.style.cssText = 'border:1px solid var(--line);padding:10px;border-radius:8px;margin-bottom:8px;background:#f8fafc';
+  div.innerHTML = `
+    <div><label>Parameter name *</label><input class="pr-name" placeholder="e.g. HBsAg"></div>
+    <div><label>Type</label>
+      <select class="pr-type" onchange="paramTypeChange(this)">
+        <option value="n">Numeric</option>
+        <option value="s">Choice</option>
+        <option value="t">Free text</option>
+      </select>
+    </div>
+    <div class="pr-num"><label>Unit</label><input class="pr-unit" placeholder="e.g. g/dL"></div>
+    <div class="pr-num"><label>Low ref</label><input type="number" step="any" class="pr-lo"></div>
+    <div class="pr-num"><label>High ref</label><input type="number" step="any" class="pr-hi"></div>
+    <div class="pr-sel full" style="display:none"><label>Choices (comma-separated)</label>
+      <input class="pr-opts" value="Non-Reactive, Reactive, Indeterminate" placeholder="Non-Reactive, Reactive, Indeterminate">
+    </div>
+    <div class="full"><button type="button" class="b d" onclick="this.parentElement.parentElement.remove()">Remove parameter</button></div>`;
+  box.appendChild(div);
+}
+
+function paramTypeChange(sel){
+  const row = sel.closest('.f');
+  const isS = sel.value==='s';
+  const isN = sel.value==='n';
+  row.querySelectorAll('.pr-num').forEach(el=>el.style.display=isN?'':'none');
+  row.querySelector('.pr-sel').style.display=isS?'':'none';
+}
+
+function saveNewTest(){
+  if(!can('*')) return;
+  const name=document.getElementById('tn').value.trim();
+  const price=Math.max(0,parseFloat(document.getElementById('tp').value)||0);
+  if(!name) return alert('Enter a test name');
+  const rows=[...document.querySelectorAll('#paramRows > .f')];
+  if(!rows.length) return alert('Add at least one parameter');
+  const an=[];
+  for(const row of rows){
+    const pn=row.querySelector('.pr-name').value.trim();
+    if(!pn) return alert('Each parameter needs a name');
+    const typ=row.querySelector('.pr-type').value;
+    if(typ==='n'){
+      const unit=row.querySelector('.pr-unit').value.trim();
+      const lo=parseFloat(row.querySelector('.pr-lo').value);
+      const hi=parseFloat(row.querySelector('.pr-hi').value);
+      an.push(N(pn, unit, [['',0,200, isNaN(lo)?null:lo, isNaN(hi)?null:hi]]));
+    } else if(typ==='s'){
+      let opts=row.querySelector('.pr-opts').value.split(',').map(s=>s.trim()).filter(Boolean);
+      if(!opts.length) opts=['Non-Reactive','Reactive','Indeterminate'];
+      // ensure Indeterminate present for typical reactive panels
+      const low=opts.map(o=>o.toLowerCase());
+      if((low.includes('reactive')||low.includes('positive')) && !low.includes('indeterminate'))
+        opts.push('Indeterminate');
+      const abn = opts.filter(o=>/reactive|positive/i.test(o) && !/non/i.test(o));
+      an.push(S(pn, opts, abn));
+    } else {
+      an.push(T(pn));
+    }
+  }
+  const id=name.toLowerCase().replace(/\W+/g,'-')+'-'+uid().slice(-4);
+  if(db.tests.some(x=>x.name.toLowerCase()===name.toLowerCase())) return alert('A test with this name already exists');
+  db.tests.push({id, name, an, price});
+  log('TEST_ADD', `${name} (${an.length} parameter(s)) @ ${money(price)}`);
+  persist(); closeDlg(); render();
+}
+
+function editTestDlg(id){
+  if(!can('*')) return;
+  const t=db.tests.find(x=>x.id===id); if(!t) return;
+  openDlg(`<h3>Edit test</h3>
+  <div class="f">
+    <div class="full"><label>Test name *</label><input id="tn" value="${e(t.name)}"></div>
+    <div><label>Price (₦)</label><input type="number" min="0" step="50" id="tp" value="${t.price||0}"></div>
+  </div>
+  <p class="muted">Parameter list is kept. To change structure, add a new test instead.</p>
+  <div class="bar" style="margin-top:18px"><button class="b" onclick="saveEditTest('${id}')">Save</button><button class="b g" data-close>Cancel</button></div>`);
+}
+
+function saveEditTest(id){
+  if(!can('*')) return;
+  const t=db.tests.find(x=>x.id===id); if(!t) return;
+  const name=document.getElementById('tn').value.trim();
+  const price=Math.max(0,parseFloat(document.getElementById('tp').value)||0);
+  if(!name) return alert('Name required');
+  log('TEST_EDIT', `${t.name} → ${name}, price ${money(t.price)} → ${money(price)}`);
+  t.name=name; t.price=price;
+  persist(); closeDlg(); render();
+}
+
+function delTest(id){
+  if(!can('*')) return;
+  if(CAT.some(c=>c.id===id)) return alert('Built-in tests cannot be removed');
+  const t=db.tests.find(x=>x.id===id);
+  if(!confirm('Remove "'+(t?.name||id)+'" from the catalogue? Existing orders keep their results.')) return;
+  db.tests=db.tests.filter(x=>x.id!==id);
+  log('TEST_REMOVE', t?.name||id);
+  persist(); render();
+}
+
+/* ---------- Users (Admin only) ---------- */
+function viewUsers(){
+  if(session.role!=='admin') return '<p class="empty">Access denied</p>';
+  return `
+    <h2>User Management</h2>
+    <div class="bar">
+      <button class="b" onclick="editUser()">+ Register User</button>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Initials</th><th>Signature</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${db.users.map(u=>`
+            <tr>
+              <td>${e(u.username)}</td>
+              <td>${e(u.name)}</td>
+              <td>${roleBadge(u.role)}</td>
+              <td>${e(u.initials||'')}</td>
+              <td>${u.signature?`<img class="sig-preview" src="${u.signature}">`:'—'}</td>
+              <td>${u.active!==false?'Active':'Disabled'}</td>
+              <td class="actions">
+                <button class="b g" onclick="editUser('${u.id}')">Edit</button>
+                ${u.username!=='admin'?`<button class="b d" onclick="toggleUser('${u.id}')">${u.active!==false?'Disable':'Enable'}</button>`:''}
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin-top:12px">Upload a clear signature image (PNG/JPG). It will appear on printed reports when that user signs results.</p>
+  `;
+}
+
+function editUser(id){
+  if(session.role!=='admin') return;
+  const u = id ? db.users.find(x=>x.id===id) : null;
+  openDlg(`
+    <h3>${u?'Edit User':'Register New User'}</h3>
+    <div class="f">
+      <div><label>Username *</label><input id="uu" value="${e(u?.username||'')}" ${u?'readonly':''}></div>
+      <div><label>Full Name *</label><input id="un" value="${e(u?.name||'')}"></div>
+      <div><label>Role *</label>
+        <select id="ur">
+          <option value="reception" ${u?.role==='reception'?'selected':''}>Reception</option>
+          <option value="cashier" ${u?.role==='cashier'?'selected':''}>Cashier</option>
+          <option value="phleb" ${u?.role==='phleb'?'selected':''}>Phlebotomist</option>
+          <option value="lab" ${u?.role==='lab'?'selected':''}>Lab Scientist</option>
+          <option value="auditor" ${u?.role==='auditor'?'selected':''}>Auditor</option>
+          <option value="admin" ${u?.role==='admin'?'selected':''}>Administrator</option>
+        </select>
+      </div>
+      <div><label>Initials</label><input id="ui" value="${e(u?.initials||'')}" maxlength="6" placeholder="e.g. MYA"></div>
+      <div class="full"><label>Password ${u?'(leave blank to keep current)':'*'}</label>
+        <input type="password" id="up" autocomplete="new-password"></div>
+      <div class="full"><label>Signature Image</label>
+        <input type="file" id="usig" accept="image/*" onchange="previewSig(this)">
+        <div id="sigprev">${u?.signature?`<img class="sig-preview" src="${u.signature}">`:''}</div>
+      </div>
+    </div>
+    <div class="bar" style="margin-top:18px">
+      <button class="b" onclick="saveUser('${u?.id||''}')">Save User</button>
+      <button class="b g" data-close>Cancel</button>
+    </div>
+  `);
+}
+
+function previewSig(input){
+  const file = input.files[0];
+  if(!file) return;
+  if(file.size > 300000){ alert('Image too large (max ~300 KB)'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    document.getElementById('sigprev').innerHTML = `<img class="sig-preview" src="${reader.result}">`;
+    document.getElementById('sigprev').dataset.sig = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveUser(id){
+  if(session.role!=='admin') return;
+  const g=k=>document.getElementById(k).value, sigEl=document.getElementById('sigprev');
+  const body={id:id||undefined,name:g('un').trim(),role:g('ur'),initials:g('ui').trim().toUpperCase(),
+    signature:sigEl.dataset.sig||(id?db.users.find(x=>x.id===id)?.signature:'')||''};
+  if(!id) body.username=g('uu').trim().toLowerCase();
+  if(g('up')) body.password=g('up');
+  if(!body.name||(!id&&!body.username)) return alert('Username and name required');
+  try{ const r=await api('/users',body); upsertUser(r.user); closeDlg(); render(); }catch(ex){ alert(ex.message); }
+}
+function upsertUser(u){ const i=db.users.findIndex(x=>x.id===u.id); if(i<0) db.users.push(u); else db.users[i]=u; }
+async function toggleUser(id){
+  if(session.role!=='admin') return;
+  const u=db.users.find(x=>x.id===id); if(!u) return;
+  try{ const r=await api('/users',{id,active:u.active===false}); upsertUser(r.user); render(); }catch(ex){ alert(ex.message); }
+}
+
+/* ---------- Audit Log ---------- */
+function viewAudit(){
+  if(!can('audit.view')&&!can('*')) return '<p class="empty">Access denied</p>';
+  const list = db.audit.slice(0,300);
+  return `
+    <h2>Audit Log</h2>
+    <p class="muted">Last 300 actions. Every create, update, delete, login, print and export is recorded.</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Details</th></tr></thead>
+        <tbody>
+          ${list.length?list.map(a=>`
+            <tr>
+              <td>${e(new Date(a.ts).toLocaleString())}</td>
+              <td>${e(a.user)}</td>
+              <td>${roleBadge(a.role)}</td>
+              <td>${e(a.action)}</td>
+              <td style="white-space:normal;max-width:320px">${e(a.details)}</td>
+            </tr>`).join(''):'<tr><td colspan="5" class="empty">No audit entries yet</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ---------- Backup & Security (server-side) ---------- */
+function viewBackup(){
+  if(session.role!=='admin') return '<p class="empty">Access denied</p>';
+  const s=db.settings, last=s.lastBackup?new Date(s.lastBackup).toLocaleString():'Never';
+  return `<h2>Backup & Security</h2>
+  <div class="alert ${s.lastBackup&&s.backupOk?'ok':'warn'}"><b>Automatic server backups:</b> ${s.lastBackup?(s.backupOk?'last backup verified':'LAST BACKUP FAILED VERIFICATION'):'none yet'} · ${e(last)}<br>
+  Each backup is a full copy of the database, checked for integrity and matching record counts, with a SHA-256 fingerprint. The server makes one every few hours and keeps the latest 30.</div>
+  <div class="bar"><button class="b" onclick="runBackup()">Back up now</button><button class="b g" onclick="downloadBackup()">Download latest backup</button></div>
+  <p class="muted">Backup downloads are admin-only and logged. Passwords are hashed on the server (scrypt) and never sent to devices. Use HTTPS if the server is reachable from the internet.</p>`;
+}
+async function runBackup(){ try{ await api('/backup/run',{}); await pull(); alert('Backup completed and verified.'); render(); }catch(ex){ alert(ex.message); } }
+async function downloadBackup(){
+  try{
+    const r=await fetch('/api/backup/download',{headers:{Authorization:'Bearer '+TOKEN}});
+    if(!r.ok) throw new Error((await r.json()).error||'Download failed');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(await r.blob()); a.download='lims-backup-'+today()+'.db'; a.click();
+  }catch(ex){ alert(ex.message); }
+}
+
+/* ---------- Settings (Admin) ---------- */
+function viewSettings(){
+  if(session.role!=='admin') return '<p class="empty">Access denied</p>';
+  const mode = db.printMode || 'blank';
+  return `
+    <h2>Laboratory Settings</h2>
+    <div class="f" style="max-width:560px">
+      <div class="full"><label>Organization / Laboratory Name</label>
+        <input id="slab" value="${e(db.lab)}"></div>
+      <div class="full"><label>Address / contact (optional note)</label>
+        <input id="spre" value="${e(db.pre)}" placeholder="e.g. No 3 Bangikpan, Baddegi Road…"></div>
+      <div class="full"><label>Default Signer Name (fallback)</label>
+        <input id="ssig" value="${e(db.signer||'')}"></div>
+    </div>
+
+    <h3 style="margin-top:28px">Organization letterhead</h3>
+    <p class="muted">Each organization can upload its own letterhead so myLab LIMS can be used by multiple labs. Images are stored in this browser only (or in your backup file).</p>
+    <div class="f" style="max-width:560px">
+      <div class="full"><label>Header letterhead image (logo + name)</label>
+        <input type="file" id="slh" accept="image/*" onchange="previewLh(this,'lhPrev')">
+        <div id="lhPrev" style="margin-top:8px">${db.letterhead?`<img src="${db.letterhead}" style="max-width:100%;max-height:120px;border:1px solid var(--line);border-radius:6px">`:'<span class="muted">No header uploaded</span>'}</div>
+      </div>
+      <div class="full"><label>Footer image (optional – address line)</label>
+        <input type="file" id="slf" accept="image/*" onchange="previewLh(this,'lfPrev')">
+        <div id="lfPrev" style="margin-top:8px">${db.letterfoot?`<img src="${db.letterfoot}" style="max-width:100%;max-height:60px;border:1px solid var(--line);border-radius:6px">`:'<span class="muted">No footer uploaded</span>'}</div>
+      </div>
+      <div class="full"><label>Print mode</label>
+        <select id="spm">
+          <option value="blank" ${mode==='blank'?'selected':''}>Blank top – use pre-printed letterheaded paper</option>
+          <option value="embed" ${mode==='embed'?'selected':''}>Embed uploaded letterhead on the report (plain paper)</option>
+        </select>
+      </div>
+    </div>
+    <div class="bar" style="margin-top:14px">
+      <button class="b" onclick="saveSettings()">Save Settings</button>
+      ${db.letterhead||db.letterfoot?`<button class="b d" onclick="clearLetterhead()">Remove letterhead images</button>`:''}
+    </div>
+    <p class="muted" style="margin-top:16px">
+      <b>Blank top:</b> leaves ~3.8 cm empty for physical letterheaded paper.<br>
+      <b>Embed:</b> prints your uploaded header (and footer) on plain A4. Lab name is not duplicated as text on the result sheet.
+    </p>
+  `;
+}
+
+function previewLh(input, targetId){
+  const f = input.files && input.files[0];
+  const box = document.getElementById(targetId);
+  if(!f){ return; }
+  if(f.size > 800*1024){ alert('Image too large (max ~800 KB). Compress or crop it first.'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    input._dataUrl = reader.result;
+    box.innerHTML = `<img src="${reader.result}" style="max-width:100%;max-height:120px;border:1px solid var(--line);border-radius:6px">`;
+  };
+  reader.readAsDataURL(f);
+}
+
+function clearLetterhead(){
+  if(!confirm('Remove uploaded letterhead images from this organization?')) return;
+  db.letterhead = '';
+  db.letterfoot = '';
+  log('LETTERHEAD_CLEAR','Letterhead images removed');
+  persist();
+  render();
+}
+
+function saveSettings(){
+  if(session.role!=='admin') return;
+  db.lab = document.getElementById('slab').value.trim()||'myLab LIMS Laboratory';
+  db.pre = document.getElementById('spre').value.trim();
+  db.signer = document.getElementById('ssig').value.trim();
+  db.printMode = (document.getElementById('spm')||{}).value || db.printMode || 'blank';
+  const lhIn = document.getElementById('slh');
+  const lfIn = document.getElementById('slf');
+  if(lhIn && lhIn._dataUrl) db.letterhead = lhIn._dataUrl;
+  if(lfIn && lfIn._dataUrl) db.letterfoot = lfIn._dataUrl;
+  log('SETTINGS_UPDATE','Laboratory settings / letterhead mode='+(db.printMode||'blank'));
+  persist();
+  render();
+  alert('Settings saved');
+}
+
+/* ---------- Main render ---------- */
+async function render(){
+  if(!session) return;
+  nav(); setSync();
+  const main = document.getElementById('main');
+  let html = '';
+  if(page==='dash') html = await viewDash();
+  else if(page==='patients') html = await viewPatients();
+  else if(page==='orders') html = await viewOrders();
+  else if(page==='results') html = await viewResults();
+  else if(page==='tests') html = viewTests();
+  else if(page==='qc') html = viewQC();
+  else if(page==='fund') html = await viewFund();
+  else if(page==='users') html = viewUsers();
+  else if(page==='subscription') html = await viewSubscription();
+  else if(page==='audit') html = viewAudit();
+  else if(page==='backup') html = viewBackup();
+  else if(page==='settings') html = viewSettings();
+  else html = '<p class="empty">Page not found</p>';
+  main.innerHTML = subBannerHtml() + html;
+}
+
+/* ---------- Billing & Fund Inflow ---------- */
+const money=n=>'₦'+(+n||0).toLocaleString('en-NG',{maximumFractionDigits:2});
+const billOf=o=>o.total!==undefined?o.total:(o.tests||[]).reduce((t,id)=>t+(+db.tests.find(x=>x.id===id)?.price||0),0);
+const paidOf=o=>db.pay.filter(p=>p.oid===o.id&&!p.void).reduce((t,p)=>t+p.amt,0);
+const balOf=o=>Math.max(0,billOf(o)-paidOf(o));
+function payTag(o){const b=billOf(o);if(!b)return'';const p=paidOf(o);return p>=b?'<span class="tag Completed">Paid</span>':p>0?'<span class="tag Progress">Part-paid</span>':'<span class="tag Pending">Unpaid</span>'}
+function updTot(){const t=[...document.querySelectorAll('#otests input:checked')].reduce((s,c)=>s+(+db.tests.find(x=>x.id===c.value)?.price||0),0);document.getElementById('otot').textContent=money(t)}
+function setPrice(id,v){if(!can('*'))return;const t=db.tests.find(x=>x.id===id),n=Math.max(0,parseFloat(v)||0);log('TEST_PRICE',`${t.name}: ${money(t.price)} → ${money(n)}`);t.price=n;persist();render()}
+let fundPeriod='today';
+const inPeriod=(d,p)=>p==='all'||(p==='today'?d===today():d.slice(0,7)===today().slice(0,7));
+const sumPay=l=>l.filter(p=>!p.void).reduce((t,p)=>t+p.amt,0);
+function dashExtra(){let h='';
+  if(can('qc.view')){const bad=db.qc.mats.filter(m=>qcLast(m)?.s==='Reject');if(bad.length)h+=`<div class="alert warn">QC rejected: ${bad.map(m=>e(m.name+' ('+m.an+')')).join(', ')}. Check Quality Control before reporting these analytes.</div>`}
+  if(can('fund.view'))h+=`<p class="muted">Received today: <b>${money(sumPay(db.pay.filter(p=>p.date===today())))}</b></p>`;
+  return h}
+async function viewFund(){
+  if(!can('fund.view')) return '<p class="empty">Access denied</p>';
+  const pats=await getPatients();
+  const nm=o=>{const p=pats.find(x=>x.id===o.pid); return p?`${p.pid||''} ${p.name}`:'—'};
+  const testsOf=o=>(o.tests||[]).map(tid=>db.tests.find(t=>t.id===tid)?.name||tid).join(', ');
+  const per=db.pay.filter(p=>inPeriod(p.date,fundPeriod)).slice().reverse();
+  const out=db.orders.filter(o=>balOf(o)>0);
+  const meth={};
+  per.filter(p=>!p.void).forEach(p=>meth[p.m]=(meth[p.m]||0)+p.amt);
+  const rec=can('fund.edit')||can('*');
+  // patient revenue summary for period
+  const byPat={};
+  per.filter(p=>!p.void&&p.oid).forEach(p=>{
+    const o=db.orders.find(x=>x.id===p.oid); if(!o) return;
+    const key=o.pid;
+    byPat[key]=byPat[key]||{amt:0,n:0,name:nm(o)};
+    byPat[key].amt+=p.amt; byPat[key].n++;
+  });
+  const patRows=Object.values(byPat).sort((a,b)=>b.amt-a.amt);
+  return `<h2>Fund Inflow</h2>
+  <p class="muted">Payments are linked to <b>registered patients</b> and the <b>tests ordered</b> on each lab order. Outstanding balances come from unpaid orders only.</p>
+  <div class="st">
+    <div><b>${money(sumPay(db.pay.filter(p=>p.date===today())))}</b>Received today</div>
+    <div><b>${money(sumPay(db.pay.filter(p=>inPeriod(p.date,'month'))))}</b>This month</div>
+    <div><b>${money(out.reduce((t,o)=>t+balOf(o),0))}</b>Outstanding (${out.length} orders)</div>
+  </div>
+  <div class="bar">
+    <select onchange="fundPeriod=this.value;render()">${[['today','Today'],['month','This month'],['all','All time']].map(([v,l])=>`<option value="${v}" ${fundPeriod===v?'selected':''}>${l}</option>`).join('')}</select>
+    ${rec?`<button class="b" onclick="recordPay()">+ Record payment</button>`:''}
+    ${can('backup.export')||can('*')?`<button class="b g" onclick="exportFund()">Export CSV</button>`:''}
+  </div>
+  <p class="muted">Selected period total: <b>${money(sumPay(per))}</b> ${Object.entries(meth).map(([m,v])=>'· '+e(m)+' '+money(v)).join(' ')}</p>
+
+  <h3>Payments (linked to patient & order)</h3>
+  <div class="tw"><table><thead><tr><th>Date</th><th>Receipt</th><th>Patient</th><th>Order / Tests</th><th>Method</th><th>Amount</th><th>By</th><th></th></tr></thead><tbody>
+  ${per.length?per.map(p=>{
+    const o=db.orders.find(x=>x.id===p.oid);
+    const patient=o?e(nm(o)):e(p.src||'Other inflow');
+    const tests=o?`<div class="muted" style="white-space:normal;max-width:260px">${e(testsOf(o))}</div>`:'';
+    return `<tr style="${p.void?'opacity:.5;text-decoration:line-through':''}">
+      <td>${e(p.date)}</td><td>${e(p.rc)}</td>
+      <td>${patient}</td>
+      <td>${o?e(o.oid)+tests:e(p.src||'—')}</td>
+      <td>${e(p.m)}</td><td>${money(p.amt)}</td><td>${e(p.by)}</td>
+      <td>${p.void?'<span class="muted">Voided</span>':can('*')?`<button class="b d" onclick="voidPay('${p.id}')">Void</button>`:''}</td>
+    </tr>`;
+  }).join(''):'<tr><td colspan="8" class="empty">No payments in this period</td></tr>'}
+  </tbody></table></div>
+
+  <h3>Revenue by patient (selected period)</h3>
+  <div class="tw"><table><thead><tr><th>Patient</th><th>Receipts</th><th>Amount received</th></tr></thead><tbody>
+  ${patRows.length?patRows.map(r=>`<tr><td>${e(r.name)}</td><td>${r.n}</td><td>${money(r.amt)}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">No patient-linked payments in this period</td></tr>'}
+  </tbody></table></div>
+
+  <h3>Outstanding balances (unpaid / part-paid orders)</h3>
+  <div class="tw"><table><thead><tr><th>Order</th><th>Patient</th><th>Tests ordered</th><th>Billed</th><th>Paid</th><th>Balance</th><th></th></tr></thead><tbody>
+  ${out.length?out.map(o=>`<tr>
+    <td>${e(o.oid)}</td><td>${e(nm(o))}</td>
+    <td style="white-space:normal;max-width:240px">${e(testsOf(o))}</td>
+    <td>${money(billOf(o))}</td><td>${money(paidOf(o))}</td><td><b>${money(balOf(o))}</b></td>
+    <td>${rec?`<button class="b" onclick="recordPay('${o.id}')">Receive</button>`:''}</td>
+  </tr>`).join(''):'<tr><td colspan="7" class="empty">No outstanding balances</td></tr>'}
+  </tbody></table></div>`;
+}
+
+async function recordPay(oid){
+  if(!can('fund.edit')&&!can('*')) return alert('Access denied');
+  const pats=await getPatients();
+  const out=db.orders.filter(o=>balOf(o)>0);
+  const detail=o=>{
+    const p=pats.find(x=>x.id===o.pid);
+    const tests=(o.tests||[]).map(tid=>{
+      const t=db.tests.find(x=>x.id===tid);
+      return `${t?.name||tid} (${money(t?.price||0)})`;
+    }).join('; ');
+    return `${o.oid} · ${p?(p.pid+' '+p.name):'—'} · bal ${money(balOf(o))} · ${tests}`;
+  };
+  openDlg(`<h3>Record payment</h3>
+  <p class="muted">Select a lab order to link this payment to the <b>registered patient</b> and the <b>tests ordered</b>. Or choose "Other inflow" for non-order money.</p>
+  <div class="f">
+    <div class="full"><label>Payment for (patient order) *</label>
+      <select id="py_o" onchange="payPick()">
+        <option value="">Other inflow (not linked to a patient order)</option>
+        ${out.map(o=>`<option value="${o.id}" data-b="${balOf(o)}" ${o.id===oid?'selected':''}>${e(detail(o))}</option>`).join('')}
+      </select>
+    </div>
+    <div class="full" id="py_detail" style="display:none"></div>
+    <div class="full" id="py_sw"><label>Source / description *</label><input id="py_s" placeholder="e.g. donation, walk-in sample fee"></div>
+    <div><label>Amount (₦) *</label><input type="number" id="py_a" min="0" step="any"></div>
+    <div><label>Method</label><select id="py_m"><option>Cash</option><option>Bank transfer</option><option>POS</option><option>Cheque</option><option>HMO / Insurance</option></select></div>
+    <div><label>Date</label><input type="date" id="py_d" value="${today()}" max="${today()}" ${can('*')?'':'readonly'}></div>
+    <div><label>Reference / note</label><input id="py_n"></div>
+  </div>
+  <div class="bar" style="margin-top:18px"><button class="b" onclick="savePay()">Save payment</button><button class="b g" data-close>Cancel</button></div>`);
+  payPick();
+}
+
+function payPick(){
+  const s=document.getElementById('py_o');
+  const b=s.selectedOptions[0]?.dataset?.b;
+  const sw=document.getElementById('py_sw');
+  const det=document.getElementById('py_detail');
+  sw.style.display=s.value?'none':'';
+  if(s.value){
+    const o=db.orders.find(x=>x.id===s.value);
+    if(o){
+      const tests=(o.tests||[]).map(tid=>{
+        const t=db.tests.find(x=>x.id===tid);
+        return `<li>${e(t?.name||tid)} — ${money(t?.price||0)}</li>`;
+      }).join('');
+      det.style.display='block';
+      det.innerHTML=`<div class="alert info"><b>Order bill</b><ul style="margin:6px 0 0 18px">${tests}</ul>
+        <div style="margin-top:8px">Billed ${money(billOf(o))} · Paid ${money(paidOf(o))} · <b>Balance ${money(balOf(o))}</b></div></div>`;
+    }
+  } else {
+    det.style.display='none'; det.innerHTML='';
+  }
+  if(b) document.getElementById('py_a').value=b;
+}
+
+async function savePay(){
+  if(!can('fund.edit')&&!can('*')) return alert('Access denied');
+  const oid=document.getElementById('py_o').value;
+  const o=db.orders.find(x=>x.id===oid);
+  const src=document.getElementById('py_s').value.trim();
+  const amt=Math.round(parseFloat(document.getElementById('py_a').value)*100)/100;
+  const m=document.getElementById('py_m').value;
+  if(!(amt>0)) return alert('Enter a valid amount');
+  if(o&&amt>balOf(o)+0.001) return alert('Amount is more than the balance of '+money(balOf(o)));
+  if(!o&&!src) return alert('Describe the source of this inflow');
+  let rn; try{ rn=(await api('/next',{name:'rc'})).n; }catch(ex){ return alert('Cannot reach the server: '+ex.message); }
+  const rc='RC'+String(rn).padStart(4,'0');
+  const patName=o?(db.patients.find(p=>p.id===o.pid)?.name||''):'';
+  db.pay.push({
+    id:uid(), rc, oid:o?o.id:null, pid:o?o.pid:null, src:o?'':src,
+    amt, m, date:document.getElementById('py_d').value||today(),
+    note:document.getElementById('py_n').value.trim(),
+    by:session.username, ts:nowISO()
+  });
+  log('PAYMENT', `${rc} ${money(amt)} ${m} ${o?('patient '+patName+' order '+o.oid):('other: '+src)}`);
+  persist(); closeDlg(); render();
+}
+
+function voidPay(id){
+  if(!can('*')) return alert('Access denied');
+  const p=db.pay.find(x=>x.id===id); if(!p) return;
+  const r=(prompt('Reason for voiding receipt '+p.rc+' ('+money(p.amt)+')?')||'').trim();
+  if(!r) return alert('A reason is required.');
+  p.void=true; p.voidBy=session.username; p.voidReason=r; p.voidTs=nowISO();
+  log('PAYMENT_VOID', `${p.rc} ${money(p.amt)} – ${r}`);
+  persist(); render();
+}
+
+function exportFund(){
+  if(!can('backup.export')&&!can('*')) return alert('Access denied – export restricted');
+  const q=v=>{v=String(v??''); if(/^[=+\-@]/.test(v)) v="'"+v; return '"'+v.replace(/"/g,'""')+'"'};
+  const rows=[['Date','Receipt','Patient ID','Patient','Order','Tests','Source','Method','Amount','Recorded by','Status','Void reason']];
+  db.pay.forEach(p=>{
+    const o=db.orders.find(x=>x.id===p.oid);
+    const pat=o?db.patients.find(x=>x.id===o.pid):null;
+    const tests=o?(o.tests||[]).map(tid=>db.tests.find(t=>t.id===tid)?.name||tid).join('; '):'';
+    rows.push([p.date,p.rc,pat?.pid||'',pat?.name||'',o?.oid||'',tests,p.src||'',p.m,p.amt,p.by,p.void?'VOID':'OK',p.voidReason||'']);
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'}));
+  a.download='fund-inflow-'+today()+'.csv';
+  a.click();
+  log('FUND_EXPORT', db.pay.length+' payment record(s) exported');
+  persist();
+}
+
+/* ---------- Quality Control (Levey-Jennings + Westgard) ---------- */
+let qcSel=null;
+const qcRuns=id=>db.qc.runs.filter(r=>r.mid===id).sort((a,b)=>a.ts<b.ts?-1:1);
+const qcLast=m=>{const r=qcRuns(m.id);return r[r.length-1]};
+/* Westgard multi-rule QC (ISO 15189 aligned internal QC)
+   Reject rules: 1-3s, 2-2s, R-4s, 4-1s, 10x, 2of3-2s
+   Warning: 1-2s (investigate trend; still reportable pending lab policy)
+   ISO 15189:2022 requires documented acceptance criteria, corrective action
+   when out of control, and that patient results are not released until resolved. */
+function qcEval(pz,z){
+  const a=[...pz,z], n=a.length, y=a[n-2], x=a[n-3], r=[], last=k=>a.slice(-k);
+  // 1-3s: one control exceeds ±3 SD
+  if(Math.abs(z)>3) r.push('1-3s');
+  // 2-2s: two consecutive controls exceed same-side ±2 SD
+  if(n>1 && ((z>2&&y>2)||(z<-2&&y<-2))) r.push('2-2s');
+  // R-4s: two consecutive controls differ by >4 SD (opposite sides)
+  if(n>1 && Math.abs(z-y)>4) r.push('R-4s');
+  // 4-1s: four consecutive controls exceed same-side ±1 SD
+  if(n>=4 && (last(4).every(v=>v>1)||last(4).every(v=>v<-1))) r.push('4-1s');
+  // 10x: ten consecutive controls on the same side of the mean
+  if(n>=10 && (last(10).every(v=>v>0)||last(10).every(v=>v<0))) r.push('10x');
+  // 2of3-2s: two of the last three controls exceed same-side ±2 SD
+  if(n>=3){
+    const last3=last(3);
+    if(last3.filter(v=>v>2).length>=2 || last3.filter(v=>v<-2).length>=2) r.push('2of3-2s');
+  }
+  if(r.length) return {s:'Reject', rule:r.join(', ')};
+  // 1-2s warning only (not automatic reject)
+  if(Math.abs(z)>2) return {s:'Warning', rule:'1-2s'};
+  return {s:'Accept', rule:''};
+}
+function ljChart(rs){
+  rs=rs.slice(-30);const W=640,H=240,L=40,R=10,T=10,B=14;
+  const y=z=>T+(H-T-B)*(1-(Math.max(-4,Math.min(4,z))+4)/8),x=i=>L+(W-L-R)*(rs.length<2?.5:i/(rs.length-1));
+  const col=k=>k===0?'#16a34a':Math.abs(k)===3?'#dc2626':Math.abs(k)===2?'#ca8a04':'#cbd5e1';
+  let g='';[-3,-2,-1,0,1,2,3].forEach(k=>{g+=`<line x1="${L}" x2="${W-R}" y1="${y(k)}" y2="${y(k)}" stroke="${col(k)}" ${k?'stroke-dasharray="4 3"':''}/><text x="2" y="${y(k)+4}" font-size="11" fill="#486581">${k>0?'+':''}${k} SD</text>`});
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;background:#fff;border:1px solid var(--line);border-radius:10px">${g}<polyline points="${rs.map((r,i)=>x(i)+','+y(r.z)).join(' ')}" fill="none" stroke="#0284c7" stroke-width="1.5"/>${rs.map((r,i)=>`<circle cx="${x(i)}" cy="${y(r.z)}" r="4" fill="${r.s==='Reject'?'#dc2626':r.s==='Warning'?'#ca8a04':'#0284c7'}"><title>${e(r.date)}: ${e(r.val)} (z ${r.z.toFixed(2)})</title></circle>`).join('')}</svg>`;
+}
+function viewQC(){
+  if(!can('qc.view')) return '<p class="empty">Access denied</p>';
+  const ed=can('qc.edit')||can('*'),sel=db.qc.mats.find(m=>m.id===qcSel);
+  const tag=m=>{if(m.exp&&m.exp<today())return'<span class="tag Reject">Expired lot</span>';const r=qcLast(m);return !r?'<span class="tag Pending">No data</span>':r.s==='Reject'?`<span class="tag Reject">Reject ${e(r.rule)}</span>`:r.s==='Warning'?'<span class="tag Progress">Warning 1-2s</span>':'<span class="tag Completed">In control</span>'};
+  return `<h2>Quality Control</h2><p class="muted"><b>Westgard multi-rule</b> (ISO 15189 internal QC): 
+  <b>Reject</b> on 1<sub>3s</sub>, 2<sub>2s</sub>, R<sub>4s</sub>, 4<sub>1s</sub>, 10<sub>x</sub> or 2of3<sub>2s</sub>. 
+  <b>Warning</b> on 1<sub>2s</sub>. On reject, corrective action is required and patient results for that analyte should not be released until the run is back in control (ISO 15189:2022).</p>
+  <div class="bar">${ed?`<button class="b" onclick="editQC()">+ Control material</button>`:''}</div>
+  <div class="tw"><table><thead><tr><th>Control</th><th>Analyte</th><th>Target</th><th>Lot / expiry</th><th>Last result</th><th>Status</th><th></th></tr></thead><tbody>
+  ${db.qc.mats.length?db.qc.mats.map(m=>{const r=qcLast(m);return `<tr><td>${e(m.name)} <span class="muted">${e(m.level)}</span></td><td>${e(m.an)}</td><td>${m.mean} ± ${m.sd} ${e(m.unit||'')}</td><td>${e(m.lot||'')}${m.exp?' · '+e(m.exp):''}</td><td>${r?e(r.val)+' <span class="muted">('+e(r.date)+')</span>':'—'}</td><td>${tag(m)}</td><td class="actions">${ed?`<button class="b" onclick="recordQC('${m.id}')">Record</button>`:''}<button class="b g" onclick="qcSel='${m.id}';render()">Chart</button>${ed?`<button class="b g" onclick="editQC('${m.id}')">Edit</button>`:''}</td></tr>`}).join(''):'<tr><td colspan="7" class="empty">No control materials yet</td></tr>'}</tbody></table></div>
+  ${sel?`<h3>${e(sel.name)} – ${e(sel.an)}</h3>${ljChart(qcRuns(sel.id))}<div class="tw" style="margin-top:12px"><table><thead><tr><th>Date</th><th>Value</th><th>z</th><th>Result</th><th>Rule</th><th>Corrective action</th><th>By</th></tr></thead><tbody>${qcRuns(sel.id).slice(-10).reverse().map(r=>`<tr><td>${e(r.date)}</td><td>${e(r.val)}</td><td>${r.z.toFixed(2)}</td><td><span class="tag ${r.s==='Reject'?'Reject':r.s==='Warning'?'Progress':'Completed'}">${r.s}</span></td><td>${e(r.rule)}</td><td style="white-space:normal">${e(r.act||'')}</td><td>${e(r.by)}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">No results yet</td></tr>'}</tbody></table></div>`:''}`;
+}
+function editQC(id){
+  if(!can('qc.edit')&&!can('*')) return alert('Access denied');
+  const m=db.qc.mats.find(x=>x.id===id)||{},an=[...new Set(db.tests.flatMap(t=>t.an.filter(a=>a.t==='n').map(a=>a.n)))];
+  openDlg(`<h3>${id?'Edit':'New'} control material</h3><div class="f">
+  <div><label>Name *</label><input id="qn" value="${e(m.name||'')}" placeholder="e.g. Bio-Rad Haematology"></div>
+  <div><label>Level</label><select id="ql">${['Level 1','Level 2','Level 3'].map(l=>`<option ${m.level===l?'selected':''}>${l}</option>`).join('')}</select></div>
+  <div><label>Analyte *</label><input id="qa_" list="qan" value="${e(m.an||'')}"><datalist id="qan">${an.map(a=>`<option value="${e(a)}">`).join('')}</datalist></div>
+  <div><label>Unit</label><input id="qu" value="${e(m.unit||'')}"></div>
+  <div><label>Target mean *</label><input type="number" step="any" id="qm" value="${m.mean??''}"></div>
+  <div><label>Target SD *</label><input type="number" step="any" min="0" id="qs" value="${m.sd??''}"></div>
+  <div><label>Lot number</label><input id="qlot" value="${e(m.lot||'')}"></div>
+  <div><label>Expiry date</label><input type="date" id="qe" value="${e(m.exp||'')}"></div></div>
+  <div class="bar" style="margin-top:18px"><button class="b" onclick="saveMat('${id||''}')">Save</button><button class="b g" data-close>Cancel</button></div>`);
+}
+function saveMat(id){
+  if(!can('qc.edit')&&!can('*')) return alert('Access denied');
+  const g=k=>document.getElementById(k).value.trim(),d={name:g('qn'),level:g('ql'),an:g('qa_'),unit:g('qu'),mean:parseFloat(g('qm')),sd:parseFloat(g('qs')),lot:g('qlot'),exp:g('qe')};
+  if(!d.name||!d.an||isNaN(d.mean)||!(d.sd>0)) return alert('Enter the name, analyte, target mean and an SD above zero.');
+  if(id){const m=db.qc.mats.find(x=>x.id===id);log('QC_MATERIAL_EDIT',`${m.name}: mean ${m.mean}→${d.mean}, SD ${m.sd}→${d.sd}, lot ${m.lot||'-'}→${d.lot||'-'}`);Object.assign(m,d)}
+  else{db.qc.mats.push({id:uid(),...d});log('QC_MATERIAL_ADD',`${d.name} ${d.an} mean ${d.mean} SD ${d.sd}`)}
+  persist();closeDlg();render();
+}
+function recordQC(id){
+  const m=db.qc.mats.find(x=>x.id===id);if(!m||(!can('qc.edit')&&!can('*')))return;
+  if(m.exp&&m.exp<today()) return alert('This control lot expired on '+m.exp+'. Edit the material with the new lot first.');
+  openDlg(`<h3>QC result – ${e(m.name)}</h3><p class="muted">${e(m.an)} · target ${m.mean} ± ${m.sd} ${e(m.unit||'')}</p><div class="f">
+  <div><label>Measured value *</label><input type="number" id="qv" step="any"></div>
+  <div><label>Date</label><input type="date" id="qd" value="${today()}" max="${today()}" ${can('*')?'':'readonly'}></div>
+  <div class="full"><label>Corrective action (required if the result is rejected)</label><textarea id="qact" rows="2"></textarea></div></div>
+  <div class="bar" style="margin-top:18px"><button class="b" onclick="saveQC('${id}')">Save result</button><button class="b g" data-close>Cancel</button></div>`);
+}
+function saveQC(id){
+  const m=db.qc.mats.find(x=>x.id===id);if(!m||(!can('qc.edit')&&!can('*')))return alert('Access denied');
+  const v=parseFloat(document.getElementById('qv').value);if(isNaN(v))return alert('Enter the measured value');
+  const z=(v-m.mean)/m.sd,ev=qcEval(qcRuns(id).map(x=>x.z),z),act=document.getElementById('qact').value.trim();
+  if(ev.s==='Reject'&&!act)return alert('Rejected by rule '+ev.rule+'. Do not report patient results for this analyte until resolved. Enter the corrective action taken, then save.');
+  db.qc.runs.push({id:uid(),mid:id,date:document.getElementById('qd').value||today(),val:v,z,s:ev.s,rule:ev.rule,act,by:session.username,ts:nowISO()});
+  log('QC_RESULT',`${m.name} ${m.an}: ${v} (z ${z.toFixed(2)}) ${ev.s}${ev.rule?' '+ev.rule:''}`);
+  persist();closeDlg();qcSel=id;render();
+}
+
+/* ---------- Facility registration & subscription ---------- */
+let SUB=null, subT=null;
+const fmtLeft=sec=>{ const d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600); return d>0?d+' day'+(d>1?'s':'')+(h?' '+h+' h':''):h>0?h+' hour'+(h>1?'s':''):'under 1 hour'; };
+async function refreshSub(){
+  try{ const old=SUB&&SUB.status; SUB=await api('/sub'); if(old&&old!==SUB.status) render(); }catch(_){}
+}
+function subBannerHtml(){
+  if(!SUB) return '';
+  const adm=session&&session.role==='admin', go=adm?` <a href="#" onclick="page='subscription';render();return false">Open Subscription</a>`:' Please tell your administrator.';
+  if(SUB.status==='expired') return `<div class="alert warn"><b>Subscription expired.</b> The system is now read-only: nothing new can be saved.${go}</div>`;
+  if(SUB.left<3*86400) return `<div class="alert warn">Your subscription ends in <b>${fmtLeft(SUB.left)}</b>.${go}</div>`;
+  if(SUB.status==='trial') return `<div class="muted" style="margin-bottom:8px">Free trial: ${fmtLeft(SUB.left)} left.</div>`;
+  return '';
+}
+async function viewSubscription(){
+  if(session.role!=='admin') return '<p class="empty">Access denied</p>';
+  let s; try{ s=await api('/sub'); SUB=s; }catch(ex){ return '<p class="empty">'+e(ex.message)+'</p>'; }
+  const lab={trial:'Free trial',active:'Active',expired:'Expired',suspended:'Suspended'}[s.status]||s.status;
+  return `<h2>Subscription</h2>
+  <div class="st"><div><b>${e(lab)}</b>Status</div><div><b>${e(s.plan==='trial'?'Trial':s.plan)}</b>Plan</div><div><b>${new Date(s.until*1000).toLocaleString()}</b>${s.status==='expired'?'Expired on':'Valid until'}</div></div>
+  <h3>Renew or change plan</h3>
+  <div class="tw"><table><thead><tr><th>Plan</th><th>Length</th><th>Price</th><th></th></tr></thead><tbody>
+  ${s.plans.map(p=>`<tr><td><b>${e(p.name)}</b></td><td>${p.days} day${p.days>1?'s':''}</td><td>${p.price>0?money(p.price):'<span class="muted">Not available yet</span>'}</td>
+  <td class="actions">${p.price>0?`<button class="b" onclick="payTransfer('${p.id}')">Pay by bank transfer</button>${s.paystack?` <button class="b g" onclick="payOnline('${p.id}')">Pay online</button>`:''}`:''}</td></tr>`).join('')}</tbody></table></div>
+  <p class="muted">A new payment adds time to what you have left; nothing is lost. Bank-transfer payments are activated when the platform owner confirms them.</p>
+  ${s.support?`<p class="muted">Payment help: ${e(s.support)}</p>`:''}
+  <h3>Payment history</h3>
+  <div class="tw"><table><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th></tr></thead><tbody>
+  ${s.history.length?s.history.map(h=>`<tr><td>${new Date(h.created*1000).toLocaleDateString()}</td><td>${e(h.plan)}</td><td>${money(h.amount)}</td><td>${e(h.method)}</td><td>${e(h.ref)}</td><td><span class="tag ${h.status==='paid'?'Completed':h.status==='pending'?'Progress':'Pending'}">${e(h.status)}</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty">No payments yet</td></tr>'}</tbody></table></div>`;
+}
+function payTransfer(plan){
+  openDlg(`<h3>Pay by bank transfer</h3><p>Optional: your transfer reference or the name on the sending account, so the owner can match your payment.</p>
+  <div class="f"><div class="full"><input id="pnote" placeholder="e.g. sender name or reference"></div></div>
+  <div class="bar" style="margin-top:14px"><button class="b" onclick="sendTransfer('${plan}')">Get payment details</button><button class="b g" data-close>Cancel</button></div>`);
+}
+async function sendTransfer(plan){
+  try{
+    const r=await api('/sub/request',{plan,note:document.getElementById('pnote').value.trim()});
+    openDlg(`<h3>Payment request created</h3><p>Pay <b>${money(r.amount)}</b> for the <b>${e(r.plan)}</b> plan, using this reference: <b>${e(r.ref)}</b></p>
+    <div class="alert" style="white-space:pre-wrap">${e(r.bank||'The owner has not added bank details yet. Please contact the platform owner.')}</div>
+    <p class="muted">When the owner confirms your transfer, your plan is activated automatically.</p><div class="bar"><button class="b" data-close>Done</button></div>`);
+    render();
+  }catch(ex){ alert(ex.message); }
+}
+async function payOnline(plan){ try{ const r=await api('/sub/paystack',{plan}); location.href=r.url; }catch(ex){ alert(ex.message); } }
+function regDlg(){
+  openDlg(`<h3>Register your facility</h3><p class="muted">You become the facility administrator. After this you can add your staff and choose their roles.</p>
+  <div class="f"><div class="full"><label>Facility name *</label><input id="rn"></div>
+  <div><label>Facility code * (letters/numbers)</label><input id="rc" placeholder="e.g. cityhospital" autocapitalize="none"></div><div><label>Phone</label><input id="rp"></div>
+  <div class="full"><label>Email</label><input id="re" type="email"></div><div class="full"><label>Your full name *</label><input id="rf"></div>
+  <div><label>Choose a username *</label><input id="ru" autocapitalize="none"></div><div><label>Choose a password * (8+ characters)</label><input id="rw" type="password" autocomplete="new-password"></div></div>
+  <p class="muted" style="font-size:12px">Your staff sign in with the facility code, their own username and their password.</p>
+  <div class="bar" style="margin-top:14px"><button class="b" onclick="doRegister()">Create facility</button><button class="b g" data-close>Cancel</button></div>`);
+}
+async function doRegister(){
+  const g=id=>document.getElementById(id).value.trim();
+  try{
+    const r=await api('/register',{code:g('rc'),name:g('rn'),phone:g('rp'),email:g('re'),fullname:g('rf'),username:g('ru'),password:document.getElementById('rw').value});
+    TOKEN=r.token; sessionStorage.setItem('lims_tok',TOKEN); session=r.user; localStorage.setItem('lims_fac',r.facility); closeDlg(); await startApp();
+  }catch(ex){ alert(ex.message); }
+}
+
+/* ---------- Boot ---------- */
+(async function boot(){
+  document.getElementById('lf').value=localStorage.getItem('lims_fac')||'';
+  document.getElementById('lp').addEventListener('keydown',ev=>{ if(ev.key==='Enter') doLogin(); });
+  document.getElementById('lu').addEventListener('keydown',ev=>{ if(ev.key==='Enter') document.getElementById('lp').focus(); });
+  window.addEventListener('beforeunload',ev=>{ if(dirty){ ev.preventDefault(); ev.returnValue=''; } });
+  if(TOKEN){ try{ session=await api('/me'); await startApp(); }catch(_){ session=null; } }
+})();
+</script>
+</body>
+</html>

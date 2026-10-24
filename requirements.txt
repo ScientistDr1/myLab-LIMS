@@ -1,0 +1,2 @@
+# The LIMS server uses only what ships with Python, so there is nothing to install.
+# This file exists so hosting platforms that run "pip install -r requirements.txt" succeed.

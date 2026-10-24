@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: lab-lims
+    runtime: docker
+    plan: starter            # a paid plan is needed for a persistent disk
+    healthCheckPath: /health
+    numInstances: 1          # must stay at 1: the database is a single file
+    envVars:
+      - key: LIMS_OWNER_PASSWORD
+        generateValue: true  # shown in the Render dashboard, Environment tab
+    disk:
+      name: lims-data
+      mountPath: /data
+      sizeGB: 1

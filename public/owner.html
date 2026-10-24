@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Platform Owner Console</title>
+<style>
+:root{--ink:#16262c;--mut:#5d7078;--bg:#f2f5f6;--card:#fff;--dark:#0e3a45;--acc:#1b7f92;--line:#d9e2e5;--red:#b3261e;--ok:#1a7f4b}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:var(--dark);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0}main{max-width:1200px;margin:0 auto;padding:18px 14px 60px}
+h2{margin:22px 0 8px;font-size:18px}input,select,textarea{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;width:100%}
+label{display:block;font-size:13px;color:var(--mut);margin-top:8px}
+button{font:inherit;border:0;border-radius:6px;padding:7px 12px;cursor:pointer;background:var(--acc);color:#fff}button.g{background:#e3ecee;color:var(--ink)}button.d{background:#fff;color:var(--red);border:1px solid var(--red)}
+.tw{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:8px}table{border-collapse:collapse;width:100%}th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:13px;color:var(--mut)}.st{display:flex;gap:12px;flex-wrap:wrap}.st div{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;min-width:150px}.st b{font-size:24px;display:block}
+.tag{padding:2px 9px;border-radius:10px;font-size:12px;background:#e6eef0}.tag.active{background:#d8f1e4;color:var(--ok)}.tag.trial{background:#dbeafe;color:#1e40af}.tag.expired,.tag.suspended{background:#fee2e2;color:var(--red)}
+#login{max-width:340px;margin:12vh auto;background:#fff;padding:26px;border-radius:12px;border:1px solid var(--line)}#err{color:var(--red);font-size:13px;display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px}
+.muted{color:var(--mut);font-size:13px}.row{display:flex;gap:6px;flex-wrap:wrap}
+</style></head><body>
+<div id="login"><h2 style="margin-top:0">Platform Owner</h2><div id="err"></div>
+<label>Username</label><input id="u" autocapitalize="none"><label>Password</label><input id="p" type="password"><p><button onclick="login()" style="width:100%">Sign in</button></p></div>
+<div id="app" style="display:none">
+<header><h1 id="brand">Platform Owner Console</h1><div class="row"><button class="g" onclick="load()">Refresh</button><button class="g" onclick="chpw()">Change password</button><button class="g" onclick="logout()">Sign out</button></div></header>
+<main id="main"></main></div>
+<script>
+let TOK=sessionStorage.getItem('owner_tok')||'',D=null,timer=null;
+const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>'₦'+(+n||0).toLocaleString('en-NG',{maximumFractionDigits:2});
+const dt=t=>t?new Date(t*1000).toLocaleString():'—';
+async function api(p,b){
+  const r=await fetch('/api'+p,{method:b===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(TOK?{Authorization:'Bearer '+TOK}:{})},body:b===undefined?undefined:JSON.stringify(b)});
+  const j=await r.json().catch(()=>({}));if(r.status===401&&TOK&&p!=='/login'){out();}
+  if(!r.ok)throw new Error(j.error||'Error '+r.status);return j;
+}
+async function login(){
+  try{const r=await api('/login',{facility:'platform',username:u.value.trim().toLowerCase(),password:p.value});TOK=r.token;sessionStorage.setItem('owner_tok',TOK);start();}
+  catch(x){err.textContent=x.message;err.style.display='block';}
+}
+function out(){clearInterval(timer);TOK='';sessionStorage.removeItem('owner_tok');app.style.display='none';login_.style.display='';}
+async function logout(){try{await api('/logout',{})}catch(_){}out();}
+const login_=document.getElementById('login');
+async function start(){login_.style.display='none';app.style.display='block';await load();clearInterval(timer);timer=setInterval(load,30000);}
+async function load(){try{D=await api('/owner/overview');draw();}catch(x){if(TOK)alert(x.message);}}
+async function act(path,body,msg){if(msg&&!confirm(msg))return;try{await api(path,body);await load();}catch(x){alert(x.message);}}
+function draw(){
+  brand.textContent=(D.cfg.brand||'Platform')+' – Owner Console';
+  const T=D.tenants,pend=D.payments.filter(p=>p.status==='pending');
+  main.innerHTML=`
+  <div class="st"><div><b>${T.length}</b>Facilities</div><div><b>${T.filter(t=>t.status==='active'||t.status==='trial').length}</b>Active or on trial</div><div><b>${T.filter(t=>t.status==='expired').length}</b>Expired</div>
+  <div><b>${money(D.revenue.today)}</b>Received today</div><div><b>${money(D.revenue.month)}</b>This month</div><div><b>${money(D.revenue.all)}</b>All time</div></div>
+  ${pend.length?`<h2>Payments waiting for your confirmation (${pend.length})</h2><div class="tw"><table><thead><tr><th>Date</th><th>Facility</th><th>Plan</th><th>Amount</th><th>Method</th><th>Reference</th><th>Note</th><th></th></tr></thead><tbody>
+  ${pend.map(p=>`<tr><td>${dt(p.created)}</td><td>${e(p.code)}</td><td>${e(p.plan)}</td><td><b>${money(p.amount)}</b></td><td>${e(p.method)}</td><td>${e(p.ref)}</td><td>${e(p.note)}</td>
+  <td class="row"><button onclick="act('/owner/confirm',{id:'${p.id}'},'Confirm that ${money(p.amount)} has been received?')">Confirm received</button><button class="d" onclick="act('/owner/reject',{id:'${p.id}'},'Reject this payment request?')">Reject</button></td></tr>`).join('')}</tbody></table></div>`:''}
+  <h2>Facilities</h2><div class="tw"><table><thead><tr><th>Facility</th><th>Status</th><th>Plan</th><th>Expires</th><th>Patients</th><th>Orders</th><th>Users</th><th>Last sign-in</th><th>Backup</th><th></th></tr></thead><tbody>
+  ${T.length?T.map(t=>`<tr><td><b>${e(t.name)}</b><br><span class="muted">${e(t.code)} · ${e(t.phone||t.email||'')}</span></td><td><span class="tag ${t.status}">${t.status}</span></td><td>${e(t.plan)}</td><td>${dt(t.until)}</td><td>${t.patients}</td><td>${t.orders}</td><td>${t.users}</td><td>${dt(t.last_login)}</td>
+  <td>${t.backup?(t.backup.ok?'<span class="tag active">OK</span>':'<span class="tag expired">FAILED</span>'):'—'}</td>
+  <td class="row"><button onclick="rec('${t.code}')">Record payment</button><button class="g" onclick="ext('${t.code}')">Extend</button>
+  ${t.status==='suspended'?`<button class="g" onclick="act('/owner/tenant',{code:'${t.code}',action:'activate'})">Activate</button>`:`<button class="d" onclick="act('/owner/tenant',{code:'${t.code}',action:'suspend'},'Suspend ${e(t.name)}? Nobody there can sign in until you activate it again.')">Suspend</button>`}
+  <button class="g" onclick="rst('${t.code}')">Reset admin password</button></td></tr>`).join(''):'<tr><td colspan="10" style="text-align:center;color:var(--mut)">No facilities have registered yet</td></tr>'}</tbody></table></div>
+  <p class="muted">You see counts and subscription status only. Patient records stay private to each facility.</p>
+  <div class="grid"><div class="card"><h2 style="margin-top:0">Plans and prices</h2><p class="muted">A plan with price 0 cannot be bought yet.</p>
+  ${D.plans.map(p=>`<label>${e(p.name)} (${p.days} day${p.days>1?'s':''}) price in ₦</label><input id="pr_${p.id}" type="number" min="0" step="any" value="${p.price}">`).join('')}
+  <label>Free trial for new facilities (days, 0 = none)</label><input id="trial" type="number" min="0" value="${e(D.cfg.trial_days)}"><p><button onclick="savePlans()">Save prices and trial</button></p></div>
+  <div class="card"><h2 style="margin-top:0">Payment details shown to facilities</h2><label>Bank account for transfers</label><textarea id="bank" rows="4" placeholder="Bank name, account number, account name">${e(D.cfg.bank)}</textarea>
+  <label>Help contact (phone / WhatsApp)</label><input id="support" value="${e(D.cfg.support)}"><label>Platform name</label><input id="brandin" value="${e(D.cfg.brand)}">
+  <p><button onclick="saveCfg()">Save details</button></p><p class="muted">Online card payment (Paystack): <b>${D.paystack?'enabled':'not enabled'}</b></p></div></div>
+  <h2>Payment history</h2><div class="tw"><table><thead><tr><th>Date</th><th>Facility</th><th>Plan</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th><th>By</th></tr></thead><tbody>
+  ${D.payments.map(p=>`<tr><td>${dt(p.created)}</td><td>${e(p.code)}</td><td>${e(p.plan)}</td><td>${money(p.amount)}</td><td>${e(p.method)}</td><td>${e(p.ref)}</td><td>${e(p.status)}</td><td>${e(p.by||'')}</td></tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--mut)">No payments yet</td></tr>'}</tbody></table></div>`;
+}
+function ext(c){const d=prompt('Add how many days of access to '+c+'?','30');if(d)act('/owner/tenant',{code:c,action:'extend',days:d});}
+function rec(c){
+  const plan=prompt('Which plan did '+c+' pay for? Type: '+D.plans.map(p=>p.id).join(', '),'monthly');if(!plan)return;
+  const pl=D.plans.find(p=>p.id===plan);const amt=prompt('Amount received (₦)',pl?pl.price:'');if(!amt)return;
+  const m=prompt('Method (Cash / Bank transfer / POS)','Bank transfer')||'Bank transfer',ref=prompt('Reference or note (optional)','')||'';
+  act('/owner/record',{code:c,plan,amount:amt,method:m,ref});
+}
+function rst(c){const un=prompt('Username of the facility admin who lost the password:','');if(!un)return;const pw=prompt('Type a new temporary password (8+ characters). Tell them to change it after signing in.');if(pw)act('/owner/resetadmin',{code:c,username:un,password:pw});}
+function savePlans(){act('/owner/plans',{plans:D.plans.map(p=>({id:p.id,name:p.name,price:document.getElementById('pr_'+p.id).value}))}).then(()=>act('/owner/cfg',{trial_days:document.getElementById('trial').value}));}
+function saveCfg(){act('/owner/cfg',{bank:bank.value,support:support.value,brand:brandin.value});}
+async function chpw(){const o=prompt('Current password');if(!o)return;const n=prompt('New password (8+ characters)');if(!n)return;try{await api('/password',{old:o,new:n});alert('Password changed.');}catch(x){alert(x.message);}}
+p.addEventListener('keydown',ev=>{if(ev.key==='Enter')login();});
+if(TOK)start().catch(()=>out());
+</script></body></html>
