@@ -1,2 +1,3 @@
-# The LIMS server uses only what ships with Python, so there is nothing to install.
+# The server uses only Python's standard library. Report JPGs render in the user's browser;
+# PDF export uses the browser print dialog, so Pillow, pdfkit, wkhtmltopdf and WebKit are not required.
 # This file exists so hosting platforms that run "pip install -r requirements.txt" succeed.

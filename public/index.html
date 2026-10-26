@@ -18,6 +18,8 @@ body{margin:0;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;c
 .login-box p{margin:0 0 24px;color:var(--mut);font-size:14px}
 .login-box label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px;font-weight:500}
 .login-box input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:14px}
+.password-wrap{position:relative}.password-wrap input{padding-right:54px}.password-wrap button{position:absolute;right:6px;top:4px;width:auto;padding:7px 9px;background:transparent;color:var(--mut);border:0}.password-wrap button:hover{background:#e2e8f0;color:var(--ink)}
+.login-box p a{font-weight:700;color:#0369a1;text-decoration:underline;text-underline-offset:3px}
 .login-box button{width:100%;padding:12px;background:var(--acc);color:#fff;border:0;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
 .login-box button:hover{background:#0369a1}
 .login-err{color:var(--hi);font-size:13px;margin-bottom:12px;display:none}
@@ -55,12 +57,14 @@ tr.k{cursor:pointer}
 tr.k:hover{background:#f1f5f9}
 .st{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:24px}
 .st div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.st button{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,.05);color:inherit;text-align:left;font:inherit;cursor:pointer}.st button:hover{border-color:var(--acc);box-shadow:0 4px 12px rgba(2,132,199,.16)}.st button b{font-size:28px;display:block;color:var(--side)}
 .st b{font-size:28px;display:block;color:var(--side)}
 .tag{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;display:inline-block}
 .tag.Completed{background:#dcfce7;color:var(--ok)}
 .tag.Progress{background:#fef9c3;color:#ca8a04}
 .tag.Pending{background:#f1f5f9;color:var(--mut)}
 .tag.Reject{background:#fee2e2;color:#b91c1c}
+.tag.Rejected{background:#fee2e2;color:#b91c1c}
 .tag.role{background:#e0f2fe;color:#0369a1;text-transform:capitalize}
 .H{color:var(--hi);font-weight:700}.L{color:var(--lo);font-weight:700}.A{color:var(--hi);font-weight:700}
 .empty{padding:36px;color:var(--mut);text-align:center;font-style:italic}
@@ -181,10 +185,11 @@ summary{cursor:pointer;font-weight:600;color:var(--side)}
     <label>Username</label>
     <input id="lu" autocomplete="username" autocapitalize="none">
     <label>Password</label>
-    <input id="lp" type="password" autocomplete="current-password">
+    <div class="password-wrap"><input id="lp" type="password" autocomplete="current-password" aria-label="Password"><button type="button" onclick="togglePassword('lp',this)" aria-label="Show password" title="Show password">👁</button></div>
     <button onclick="doLogin()">Sign In</button>
     <p class="muted" style="margin-top:18px;text-align:center;font-size:12px">
       <a href="#" onclick="regDlg();return false">New facility? Register here</a><br>
+      <span style="font-size:11px">Forgot your password? Ask your facility administrator to reset it in User Configurations.</span><br>
       <span style="font-size:11px">Staff: ask your facility administrator for the facility code and your login.</span>
     </p>
   </div>
@@ -393,7 +398,7 @@ let db=null, session=null, encKey=null, TOKEN=sessionStorage.getItem('lims_tok')
 let REV=0, SNAP={}, ES=null, dirty=false, offline=false, stale=false, flushing=false, pulling=false, again=false, retryT=null;
 const COLL={patients:()=>db.patients,orders:()=>db.orders,pay:()=>db.pay,qcmats:()=>db.qc.mats,qcruns:()=>db.qc.runs,tests:()=>db.tests,audit:()=>db.audit,brand:()=>db.brand};
 const ARRS=Object.assign({users:()=>db.users},COLL);
-const WRITE={admin:'patients orders pay qcmats qcruns tests audit meta brand',reception:'patients orders audit',cashier:'pay audit',phleb:'orders audit',lab:'orders qcmats qcruns audit',auditor:'audit'};
+const WRITE={admin:'patients orders pay qcmats qcruns tests audit meta brand',reception:'patients orders audit',cashier:'pay audit',phleb:'orders audit',lab:'orders qcmats qcruns audit',mlt:'patients orders audit',mls:'orders qcmats qcruns audit',auditor:'audit'};
 const APPEND=['audit','qcruns'];
 const metaDoc=()=>({id:'meta',lab:db.lab,pre:db.pre,signer:db.signer||'',printMode:db.printMode||'blank',_v:db._mv});
 async function api(path,body){
@@ -583,7 +588,9 @@ const ROLES = {
   reception:  {label:'Reception',     can:['patients.view','patients.edit','orders.view','orders.create','results.view','results.print']},
   cashier:    {label:'Cashier',       can:['patients.view','orders.view','fund.view','fund.edit']},
   phleb:      {label:'Phlebotomist',  can:['patients.view','orders.view','orders.sample']},
-  lab:        {label:'Lab Scientist', can:['patients.view','orders.view','results.edit','results.print','tests.view','audit.view','qc.view','qc.edit']},
+  lab:        {label:'Medical Laboratory Scientist', can:['patients.view','orders.view','results.edit','results.print','tests.view','audit.view','qc.view','qc.edit','results.validate']},
+  mlt:        {label:'Medical Laboratory Technician', can:['patients.view','patients.edit','orders.view','orders.create','orders.sample','results.edit']},
+  mls:        {label:'Medical Laboratory Scientist', can:['patients.view','orders.view','results.edit','results.print','tests.view','audit.view','qc.view','qc.edit','results.validate']},
   auditor:    {label:'Auditor',       can:['patients.view','orders.view','results.view','audit.view','backup.export','qc.view','fund.view']}
 };
 function can(perm){
@@ -594,7 +601,7 @@ function can(perm){
   return r.can.includes(perm);
 }
 function roleBadge(role){
-  const map = {admin:'admin',lab:'lab',phleb:'phleb',reception:'reception',cashier:'cashier',auditor:'auditor'};
+  const map = {admin:'admin',lab:'lab',mls:'lab',mlt:'lab',phleb:'phleb',reception:'reception',cashier:'cashier',auditor:'auditor'};
   return `<span class="badge ${map[role]||''}">${e(ROLES[role]?.label||role)}</span>`;
 }
 
@@ -602,12 +609,14 @@ function roleBadge(role){
 async function doLogin(){
   const u=document.getElementById('lu').value.trim().toLowerCase(), p=document.getElementById('lp').value;
   const err=document.getElementById('login-err'); err.style.display='none';
-  if(!u||!p||!document.getElementById('lf').value.trim()){ err.textContent='Enter facility code, username and password'; err.style.display='block'; return; }
+  if(!u||!p||!document.getElementById('lf').value.trim()){ err.textContent='Enter your facility code, username and password.'; err.style.display='block'; return; }
   try{
     const r=await api('/login',{facility:document.getElementById('lf').value.trim().toLowerCase(),username:u,password:p}); localStorage.setItem('lims_fac',document.getElementById('lf').value.trim().toLowerCase());
     TOKEN=r.token; sessionStorage.setItem('lims_tok',TOKEN); session=r.user; await startApp();
   }catch(ex){ err.textContent=ex.message; err.style.display='block'; }
 }
+function togglePassword(id,button){const input=document.getElementById(id);if(!input)return;const show=input.type==='password';input.type=show?'text':'password';button.textContent=show?'🙈':'👁';button.setAttribute('aria-label',show?'Hide password':'Show password');button.title=show?'Hide password':'Show password'}
+async function copyFacilityCode(){const value=document.getElementById('newFacilityCode')?.textContent||'';try{await navigator.clipboard.writeText(value);alert('Facility code copied.');}catch(_){alert('Facility code: '+value);}}
 async function startApp(){
   applyState(await api('/state'));
   document.getElementById('login-screen').style.display='none';
@@ -626,8 +635,8 @@ function endSession(msg){
 }
 async function doLogout(){ if(dirty) await flush(); try{ await api('/logout',{}); }catch(_){} endSession(); }
 function changePw(){
-  openDlg(`<h3>Change password</h3><div class="f"><div class="full"><label>Current password</label><input type="password" id="pw0" autocomplete="current-password"></div>
-  <div class="full"><label>New password (at least 8 characters)</label><input type="password" id="pw1" autocomplete="new-password"></div></div>
+  openDlg(`<h3>Change password</h3><div class="f"><div class="full"><label>Current password</label><div class="password-wrap"><input type="password" id="pw0" autocomplete="current-password"><button type="button" onclick="togglePassword('pw0',this)">👁</button></div></div>
+  <div class="full"><label>New password (at least 8 characters)</label><div class="password-wrap"><input type="password" id="pw1" autocomplete="new-password"><button type="button" onclick="togglePassword('pw1',this)">👁</button></div></div></div>
   <div class="bar" style="margin-top:18px"><button class="b" onclick="savePw()">Save</button><button class="b g" data-close>Cancel</button></div>`);
 }
 async function savePw(){
@@ -684,12 +693,13 @@ function ageParts(p){ // {n, u} as entered, or derived from an old date of birth
 function ageText(p){ const a=ageParts(p); return a? a.n+(a.u==='m'?' mths':' yrs') : ''; }
 function ageSex(p){ const a=ageText(p); return a ? `${a} / ${p.sex||''}` : (p?.sex||''); }
 function statusOf(o){
+  if(o.sample?.status==='Rejected') return 'Rejected';
   if(!o.results||!Object.keys(o.results).length) return 'Pending';
   const tests = o.tests||[];
   const done = tests.every(tid=>{
     const t = db.tests.find(x=>x.id===tid);
     if(!t) return true;
-    return t.an.every(a => o.results[tid] && o.results[tid][a.n]!==undefined && o.results[tid][a.n]!=='');
+    return t.an.filter(a=>a.n!=='Remark').every(a => o.results[tid] && o.results[tid][a.n]!==undefined && o.results[tid][a.n]!=='');
   });
   return done ? 'Completed' : 'Progress';
 }
@@ -740,11 +750,10 @@ dlg.addEventListener('close',()=>{ if(stale){ stale=false; render(); } });
 /* ---------- Dashboard ---------- */
 async function viewDash(){
   const patients = await getPatients();
-  const totalP = patients.length;
-  const totalO = db.orders.length;
-  const pending = db.orders.filter(o=>statusOf(o)==='Pending').length;
-  const progress = db.orders.filter(o=>statusOf(o)==='Progress').length;
-  const done = db.orders.filter(o=>statusOf(o)==='Completed').length;
+  const todayPatients = db.orders.filter(o=>statusOf(o)!=='Rejected'&&(o.date===today()||(o.sample?.collectedAt||'').startsWith(today()))).length;
+  const pending = db.orders.filter(o=>['Pending','Progress'].includes(statusOf(o))).reduce((n,o)=>n+(o.tests||[]).length,0);
+  const awaiting = db.orders.filter(o=>statusOf(o)==='Completed'&&!o.validated).length;
+  const overdue = db.orders.filter(o=>['Pending','Progress'].includes(statusOf(o))&&Date.now()-new Date(o.created||o.date||today()).getTime()>86400000).length;
   const lastBackup = db.settings.lastBackup ? new Date(db.settings.lastBackup).toLocaleString() : 'Never';
   const daysSince = db.settings.lastBackup ? Math.floor((Date.now()-new Date(db.settings.lastBackup))/86400000) : 999;
   const backupWarn = daysSince >= (db.settings.backupIntervalDays||7);
@@ -753,18 +762,21 @@ async function viewDash(){
     <h2>Dashboard</h2>
     ${backupWarn && can('*') ? `<div class="alert warn">Backup overdue (${daysSince} days since last verified backup). Please create a backup in <b>Backup & Security</b>.</div>` : ''}
     <div class="st">
-      <div><b>${totalP}</b>Patients</div>
-      <div><b>${totalO}</b>Orders</div>
-      <div><b>${pending}</b>Pending</div>
-      <div><b>${progress}</b>In Progress</div>
-      <div><b>${done}</b>Completed</div>
+      <button onclick="openDashFilter('today')"><b>${todayPatients}</b>Patients Today / Samples Received</button>
+      <button onclick="openDashFilter('pending')"><b>${pending}</b>Pending Tests</button>
+      <button onclick="openDashFilter('validation')"><b>${awaiting}</b>Awaiting Validation</button>
+      <button onclick="openDashFilter('overdue')"><b>${overdue}</b>Overdue Results <small class="muted">(over 24 hours)</small></button>
     </div>
     ${dashExtra()}
-    <p class="muted">Last verified backup: ${e(lastBackup)} · Live sync: ${ES&&ES.readyState===1?'ON':'reconnecting'}</p>
+    <p class="muted">Overdue uses a 24-hour default turnaround window. Last verified backup: ${e(lastBackup)} · Live sync: ${ES&&ES.readyState===1?'ON':'reconnecting'}</p>
     <h3>Recent Orders</h3>
     ${await orderTable(db.orders.slice().reverse().slice(0,8))}
   `;
 }
+let dashFilter='';
+function dashFilterLabel(f){return ({today:'Patients Today',pending:'Pending Tests',validation:'Awaiting Validation',overdue:'Overdue Results'})[f]||''}
+function filteredOrders(list){return list.filter(o=>{const st=statusOf(o);if(dashFilter==='today')return o.date===today()||(o.sample?.collectedAt||'').startsWith(today());if(dashFilter==='pending')return st==='Pending';if(dashFilter==='validation')return st==='Completed'&&!o.validated;if(dashFilter==='overdue')return ['Pending','Progress'].includes(st)&&Date.now()-new Date(o.created||o.date||today()).getTime()>86400000;return true})}
+function openDashFilter(f){dashFilter=f;page=f==='today'||f==='pending'?'orders':'results';render()}
 
 /* ---------- Patients ---------- */
 async function viewPatients(){
@@ -903,12 +915,13 @@ async function orderTable(list){
                 <td>${e(p?.name||'—')}</td>
                 <td>${(o.tests||[]).map(tid=>e(db.tests.find(t=>t.id===tid)?.name||tid)).join(', ')}</td>
                 <td>${e(o.date||'')}</td>
-                <td><span class="tag ${st}">${st}</span> ${can('fund.view')?payTag(o):''}</td>
+                <td><span class="tag ${st}">${st}</span> ${st==='Completed'&&!o.validated?'<span class="tag Progress">Awaiting validation</span>':''}${st==='Rejected'?`<div class="muted">${e(o.sample?.rejectionReason||'')}</div>`:''} ${can('fund.view')?payTag(o):''}</td>
                 <td class="actions">
                   <button class="b g" onclick="viewOrder('${o.id}')">View</button>
                   ${can('orders.sample')||can('*')?`<button class="b" onclick="sampleDlg('${o.id}')">${o.sample?.collected?'Sample ✓':'Collect sample'}</button>`:''}
+                  ${['admin','mlt','mls','lab'].includes(session.role)&&st!=='Rejected'?`<button class="b d" onclick="rejectSample('${o.id}')">Reject Sample</button>`:''}
                   ${can('results.edit')||can('*')?`<button class="b" onclick="enterResults('${o.id}')">Results</button>`:''}
-                  ${can('results.print')||can('*')||can('results.view')?`<button class="b s" onclick="printReport('${o.id}')">Print</button>
+                  ${o.validated&&(can('results.print')||can('*')||can('results.view'))?`<button class="b s" onclick="printReport('${o.id}')">Print</button>
                   <button class="b g" onclick="exportReport('${o.id}','pdf')">PDF</button>
                   <button class="b g" onclick="exportReport('${o.id}','jpg')">JPG</button>
                   <button class="b" onclick="sendReport('${o.id}','jpg')">Send</button>`:''}
@@ -924,11 +937,12 @@ async function orderTable(list){
 async function viewOrders(){
   if(!can('orders.view')) return '<p class="empty">Access denied</p>';
   return `
-    <h2>Orders</h2>
+    <h2>Orders${dashFilter?` — ${e(dashFilterLabel(dashFilter))}`:''}</h2>
     <div class="bar">
+      ${dashFilter?`<button class="b g" onclick="dashFilter='';render()">Clear dashboard filter</button>`:''}
       ${can('orders.create')||can('*')?`<button class="b" onclick="newOrder()">+ New Order</button>`:''}
     </div>
-    ${await orderTable(db.orders.slice().reverse())}
+    ${await orderTable(filteredOrders(db.orders).slice().reverse())}
   `;
 }
 
@@ -998,6 +1012,7 @@ async function viewOrder(id){
        <b>Date:</b> ${e(o.date)} &nbsp; <span class="tag ${st}">${st}</span><br>
        <span class="muted">Created by ${e(o.createdBy||'—')}</span></p>
     ${o.notes?`<p class="muted">${e(o.notes)}</p>`:''}
+    ${o.sample?.status==='Rejected'?`<div class="alert warn"><b>Sample Rejected</b> · ${e(o.sample.rejectionReason||'Reason not recorded')} <span class="muted">(${e(o.sample.rejectedBy||'')} ${e(o.sample.rejectedAt||'')})</span></div>`:''}
     ${o.sample?.collected?`<p><b>Sample:</b> ${e(o.sample.type)} · ${e(o.sample.nature)}
       <span class="muted">(${e(o.sample.collectedBy||'')} ${e(o.sample.collectedAt?new Date(o.sample.collectedAt).toLocaleString():'')})</span></p>`:
       `<p class="muted">Sample not yet collected</p>`}
@@ -1006,7 +1021,7 @@ async function viewOrder(id){
     <div class="bar">
       ${can('orders.sample')||can('*')?`<button class="b" onclick="closeDlg();sampleDlg('${o.id}')">Sample collection</button>`:''}
       ${can('results.edit')||can('*')?`<button class="b" onclick="closeDlg();enterResults('${o.id}')">Enter / Edit Results</button>`:''}
-      ${can('results.print')||can('*')||can('results.view')?`<button class="b s" onclick="closeDlg();printReport('${o.id}')">Print</button>
+      ${o.validated&&(can('results.print')||can('*')||can('results.view'))?`<button class="b s" onclick="closeDlg();printReport('${o.id}')">Print</button>
       <button class="b g" onclick="closeDlg();exportReport('${o.id}','pdf')">Save PDF</button>
       <button class="b g" onclick="closeDlg();exportReport('${o.id}','jpg')">Save JPG</button>
       <button class="b" onclick="closeDlg();sendReport('${o.id}','jpg')">Send</button>`:''}
@@ -1030,10 +1045,11 @@ function delOrder(id){
 /* ---------- Results ---------- */
 async function viewResults(){
   if(!can('results.edit')&&!can('*')) return '<p class="empty">Access denied</p>';
-  const pending = db.orders.filter(o=>statusOf(o)!=='Completed').reverse();
+  const pending = filteredOrders(db.orders.filter(o=>statusOf(o)!=='Completed'&&statusOf(o)!=='Rejected'||(dashFilter==='validation'&&statusOf(o)==='Completed'&&!o.validated))).reverse();
   return `
-    <h2>Results Entry</h2>
+    <h2>Results Entry${dashFilter?` — ${e(dashFilterLabel(dashFilter))}`:''}</h2>
     <p class="muted">Orders that still need results</p>
+    ${dashFilter?`<div class="bar"><button class="b g" onclick="dashFilter='';render()">Clear dashboard filter</button></div>`:''}
     ${await orderTable(pending)}
   `;
 }
@@ -1046,6 +1062,7 @@ const SAMPLE_NATURES = ['Satisfactory','Clotted','Haemolysed','Insufficient','Li
 function sampleDlg(id){
   if(!can('orders.sample')&&!can('*')) return alert('Access denied');
   const o = db.orders.find(x=>x.id===id); if(!o) return;
+  if(o.sample?.status==='Rejected') return alert('This sample has been rejected.');
   o.sample = o.sample || { collected:false, type:'', nature:'', collectedAt:'', collectedBy:'' };
   const s = o.sample;
   openDlg(`<h3>Sample collection – ${e(o.oid)}</h3>
@@ -1065,6 +1082,14 @@ function sampleDlg(id){
     <button class="b" onclick="saveSample('${id}')">Save</button>
     <button class="b g" data-close>Cancel</button>
   </div>`);
+}
+async function rejectSample(id){
+  if(!['admin','mlt','mls','lab'].includes(session.role)) return alert('Access denied');
+  const reason=prompt('Enter the required reason for rejecting this sample:');
+  if(reason===null)return;
+  if(!reason.trim())return alert('A rejection reason is required.');
+  try{await api('/sample/reject',{id,reason:reason.trim()});await pull();render();}
+  catch(ex){alert(ex.message||'Could not reject this sample.');}
 }
 
 function saveSample(id){
@@ -1126,8 +1151,8 @@ async function enterResults(id){
           <input type="number" step="any" data-tid="${tid}" data-an="${e(a.n)}" value="${e(val)}"
             oninput="${autoHb?`autoHbFromPcv(this,'${tid}')`:`onResultInput(this,'${tid}')`}"></div>`;
       } else if(a.n==='Remark'){
-        html += `<div class="full"><label>Remark (auto from abnormals – editable)</label>
-          <textarea data-tid="${tid}" data-an="Remark" rows="2" style="width:100%" oninput="markRemarkManual(this)">${e(val)}</textarea></div>`;
+        html += `<div class="full"><label>Scientist remarks ${can('results.validate')||can('*')?'(editable)':'(scientist only)'}</label>
+          <textarea data-tid="${tid}" data-an="Remark" rows="2" style="width:100%" ${can('results.validate')||can('*')?'oninput="markRemarkManual(this)"':'readonly'}>${e(val)}</textarea></div>`;
       } else {
         html += `<div class="full"><label>${e(a.n)}${hint}</label>
           <input data-tid="${tid}" data-an="${e(a.n)}" value="${e(val)}" oninput="onResultInput(this,'${tid}')"></div>`;
@@ -1136,15 +1161,15 @@ async function enterResults(id){
     // Ensure remark exists for every test panel
     if(!(t.an||[]).some(a=>a.n==='Remark')){
       const val = o.results[tid]['Remark']??'';
-      html += `<div class="full"><label>Remark (auto from abnormals – editable)</label>
-        <textarea data-tid="${tid}" data-an="Remark" rows="2" style="width:100%" oninput="markRemarkManual(this)">${e(val)}</textarea></div>`;
+      html += `<div class="full"><label>Scientist remarks ${can('results.validate')||can('*')?'(editable)':'(scientist only)'}</label>
+        <textarea data-tid="${tid}" data-an="Remark" rows="2" style="width:100%" ${can('results.validate')||can('*')?'oninput="markRemarkManual(this)"':'readonly'}>${e(val)}</textarea></div>`;
     }
     html += `</div></details>`;
   });
   html += `
     <div class="bar" style="margin-top:16px">
       <button class="b" onclick="saveResults('${o.id}')">Save Results</button>
-      <button class="b s" onclick="saveResults('${o.id}');printReport('${o.id}')">Save & Print</button>
+      ${can('results.validate')||can('*')?`<button class="b s" onclick="validateAndRelease('${o.id}')">Validate &amp; Release Result</button>`:''}
       <button class="b g" data-close>Cancel</button>
     </div>`;
   openDlg(html);
@@ -1239,6 +1264,7 @@ function autoCalcResults(tid){
 }
 
 function autoRemark(tid){
+  if(session?.role==='mlt') return;
   const remarkEl = getResInput(tid, 'Remark');
   // If no Remark field, create nothing; some tests have Remark as T type
   const tdef = db.tests.find(x=>x.id===tid);
@@ -1358,6 +1384,13 @@ function saveResults(id){
   closeDlg();
   render();
 }
+function validateAndRelease(id){
+  if(!can('results.validate')&&!can('*')) return alert('Only a Medical Laboratory Scientist can validate and release results.');
+  const o=db.orders.find(x=>x.id===id);if(!o)return;
+  saveResults(id);
+  if(statusOf(o)!=='Completed')return alert('Results were saved. Complete all required test fields before validation.');
+  o.validated=true;o.validatedBy=session.username;o.validatedAt=nowISO();o.remarks=Object.values(o.results||{}).map(r=>r.Remark).filter(Boolean).join(' | ');log('RESULT_VALIDATED',`Validated and released order ${o.oid}`);persist();render();
+}
 
 /* ---------- Print / Export (letterhead, PDF, JPG, per-scientist sign) ---------- */
 
@@ -1406,7 +1439,9 @@ function buildReportHtml(o, p, opts={}){
       <div><b>Sex / Age:</b> ${e(ageSex(p))}</div>
       <div><b>Date:</b> ${e(o.date)}</div>
       <div><b>Patient ID:</b> ${e(p?.pid||'')}</div>
-      <div><b>Status:</b> ${readyTests.length=== (o.tests||[]).length ? 'Completed' : 'Partial results'}</div>
+      <div><b>Status:</b> ${readyTests.length=== (o.tests||[]).length ? 'Completed' : 'Partial results'} · Validated and released</div>
+      <div><b>Released by:</b> ${e((db.users||[]).find(u=>u.username===o.validatedBy)?.name||o.validatedBy||'')}</div>
+      <div><b>Release time:</b> ${e(o.validatedAt||'')}</div>
     </div>`;
 
   let sigHtml = '';
@@ -1459,6 +1494,7 @@ async function printReport(id){
   if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
   const o = db.orders.find(x=>x.id===id);
   if(!o) return;
+  if(!o.validated) return alert('This report is not released. A Medical Laboratory Scientist must validate it first.');
   const p = await getPatient(o.pid);
   const built = buildReportHtml(o, p);
   if(!built) return alert('No results available to print yet. Enter at least one test result first.');
@@ -1476,6 +1512,7 @@ async function exportReport(id, format){
   if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
   const o = db.orders.find(x=>x.id===id);
   if(!o) return;
+  if(!o.validated) return alert('This report is not released. A Medical Laboratory Scientist must validate it first.');
   const p = await getPatient(o.pid);
   const built = buildReportHtml(o, p);
   if(!built) return alert('No results available to export yet.');
@@ -1503,7 +1540,8 @@ async function exportReport(id, format){
       a.click();
       log('REPORT_JPG', `Export JPG ${fname} order ${o.oid}`);
     }catch(err){
-      alert('Could not create image: '+(err.message||err));
+      alert('Image export could not be rendered in this browser. The report will open in the print dialog; choose “Save as PDF” or print it.');
+      window.print();
     }
     reportEl.style.display = '';
   }
@@ -1513,6 +1551,7 @@ async function sendReport(id, format){
   if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
   const o = db.orders.find(x=>x.id===id);
   if(!o) return;
+  if(!o.validated) return alert('This report is not released. A Medical Laboratory Scientist must validate it first.');
   const p = await getPatient(o.pid);
   const built = buildReportHtml(o, p);
   if(!built) return alert('No results available to send yet.');
@@ -1546,7 +1585,7 @@ async function sendReport(id, format){
   }catch(err){
     reportEl.style.display = '';
     if(String(err.name)==='AbortError') return;
-    alert('Send failed: '+(err.message||err));
+    alert('The image could not be prepared for sharing in this browser. Use the report PDF or JPG export instead.');
   }
 }
 
@@ -1777,14 +1816,15 @@ function editUser(id){
           <option value="reception" ${u?.role==='reception'?'selected':''}>Reception</option>
           <option value="cashier" ${u?.role==='cashier'?'selected':''}>Cashier</option>
           <option value="phleb" ${u?.role==='phleb'?'selected':''}>Phlebotomist</option>
-          <option value="lab" ${u?.role==='lab'?'selected':''}>Lab Scientist</option>
+          <option value="mlt" ${u?.role==='mlt'?'selected':''}>Medical Laboratory Technician (MLT)</option>
+          <option value="mls" ${u?.role==='mls'||u?.role==='lab'?'selected':''}>Medical Laboratory Scientist (MLS)</option>
           <option value="auditor" ${u?.role==='auditor'?'selected':''}>Auditor</option>
           <option value="admin" ${u?.role==='admin'?'selected':''}>Administrator</option>
         </select>
       </div>
       <div><label>Initials</label><input id="ui" value="${e(u?.initials||'')}" maxlength="6" placeholder="e.g. MYA"></div>
       <div class="full"><label>Password ${u?'(leave blank to keep current)':'*'}</label>
-        <input type="password" id="up" autocomplete="new-password"></div>
+        <div class="password-wrap"><input type="password" id="up" autocomplete="new-password"><button type="button" onclick="togglePassword('up',this)">👁</button></div></div>
       <div class="full"><label>Signature Image</label>
         <input type="file" id="usig" accept="image/*" onchange="previewSig(this)">
         <div id="sigprev">${u?.signature?`<img class="sig-preview" src="${u.signature}">`:''}</div>
@@ -2299,17 +2339,21 @@ async function payOnline(plan){ try{ const r=await api('/sub/paystack',{plan}); 
 function regDlg(){
   openDlg(`<h3>Register your facility</h3><p class="muted">You become the facility administrator. After this you can add your staff and choose their roles.</p>
   <div class="f"><div class="full"><label>Facility name *</label><input id="rn"></div>
-  <div><label>Facility code * (letters/numbers)</label><input id="rc" placeholder="e.g. cityhospital" autocapitalize="none"></div><div><label>Phone</label><input id="rp"></div>
+  <div class="full"><p class="alert info">A unique facility code will be generated for you after registration.</p></div><div><label>Phone</label><input id="rp"></div>
   <div class="full"><label>Email</label><input id="re" type="email"></div><div class="full"><label>Your full name *</label><input id="rf"></div>
-  <div><label>Choose a username *</label><input id="ru" autocapitalize="none"></div><div><label>Choose a password * (8+ characters)</label><input id="rw" type="password" autocomplete="new-password"></div></div>
+  <div><label>Choose a username *</label><input id="ru" autocapitalize="none"></div><div><label>Choose a password * (8+ characters)</label><div class="password-wrap"><input id="rw" type="password" autocomplete="new-password"><button type="button" onclick="togglePassword('rw',this)">👁</button></div></div></div>
   <p class="muted" style="font-size:12px">Your staff sign in with the facility code, their own username and their password.</p>
   <div class="bar" style="margin-top:14px"><button class="b" onclick="doRegister()">Create facility</button><button class="b g" data-close>Cancel</button></div>`);
 }
 async function doRegister(){
   const g=id=>document.getElementById(id).value.trim();
+  if(!g('rn')||!g('rf')||!g('ru')||!document.getElementById('rw').value)return alert('Complete all required registration fields.');
+  if(!/^[a-z0-9._-]{3,32}$/i.test(g('ru')))return alert('Username must be 3–32 letters, numbers, dots, underscores or hyphens.');
+  if(document.getElementById('rw').value.length<8)return alert('Password must be at least 8 characters.');
   try{
-    const r=await api('/register',{code:g('rc'),name:g('rn'),phone:g('rp'),email:g('re'),fullname:g('rf'),username:g('ru'),password:document.getElementById('rw').value});
+    const r=await api('/register',{name:g('rn'),phone:g('rp'),email:g('re'),fullname:g('rf'),username:g('ru'),password:document.getElementById('rw').value});
     TOKEN=r.token; sessionStorage.setItem('lims_tok',TOKEN); session=r.user; localStorage.setItem('lims_fac',r.facility); closeDlg(); await startApp();
+    openDlg(`<h2 style="color:#166534">Facility created</h2><p>Save and share this facility code with your lab staff. They need it to sign in.</p><div style="padding:20px;text-align:center;background:#f0fdf4;border:2px solid #16a34a;border-radius:12px"><small>FACILITY CODE</small><div id="newFacilityCode" style="font-size:34px;font-weight:800;letter-spacing:2px">${e(r.facilityDisplay||r.facility.toUpperCase())}</div></div><div class="bar" style="margin-top:18px"><button class="b g" onclick="copyFacilityCode()">Copy code</button><button class="b" data-close>Continue</button></div>`);
   }catch(ex){ alert(ex.message); }
 }
 

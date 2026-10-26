@@ -53,12 +53,12 @@ class _Lock:
     def __exit__(s,*a): s.release()
 con=_Con();LOCK=_Lock()
 # collection -> (roles that read, roles that create/update, roles that delete)
-ALL='admin reception cashier phleb lab auditor'
-R={'patients':(ALL,'admin reception','admin'),'orders':(ALL,'admin reception phleb lab','admin'),
-'pay':('admin cashier auditor','admin cashier',''),'qcmats':('admin lab auditor','admin lab',''),
-'qcruns':('admin lab auditor','admin lab',''),'tests':(ALL,'admin','admin'),
-'audit':('admin lab auditor',ALL,''),'users':(ALL,'',''),'meta':(ALL,'admin',''),'brand':(ALL,'admin',''),'bk':(ALL,'','')}
-OWN={'phleb':('sample',),'lab':('results','updated','updatedBy')}  # parts of an order each role may change
+ALL='admin reception cashier phleb lab mlt mls auditor'
+R={'patients':(ALL,'admin reception mlt','admin'),'orders':(ALL,'admin reception phleb lab mlt mls','admin'),
+'pay':('admin cashier auditor','admin cashier',''),'qcmats':('admin lab mls auditor','admin lab mls',''),
+'qcruns':('admin lab mls auditor','admin lab mls',''),'tests':(ALL,'admin','admin'),
+'audit':('admin lab mls auditor',ALL,''),'users':(ALL,'',''),'meta':(ALL,'admin',''),'brand':(ALL,'admin',''),'bk':(ALL,'','')}
+OWN={'phleb':('sample',),'lab':('results','updated','updatedBy','validated','validatedBy','validatedAt','remarks'),'mlt':('results','updated','updatedBy','sample'),'mls':('results','updated','updatedBy','sample','validated','validatedBy','validatedAt','remarks')}  # parts of an order each role may change
 APPEND=('audit','qcruns');ROLES=tuple(ALL.split())
 CSP="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
 class Err(Exception):
@@ -121,6 +121,8 @@ def push(u,b,q):
                 if old: rm(c,i)
                 out.append(0);continue
             d=dict(ch.get('doc') or {});base=d.pop('_v',None);d['id']=i
+            if role not in ('admin','lab','mls') and any(d.get(k) for k in ('validated','validatedBy','validatedAt','remarks')): raise Err(403,'Only a Medical Laboratory Scientist can validate or add final remarks')
+            if (d.get('sample') or {}).get('status')=='Rejected' and not str((d.get('sample') or {}).get('rejectionReason') or '').strip(): raise Err(400,'A rejection reason is required')
             if len(json.dumps(d))>(4000000 if c=='brand' else 600000): raise Err(413,'Record too large')
             if old:
                 if c in APPEND: raise Err(403,'This record cannot be edited')
@@ -129,11 +131,15 @@ def push(u,b,q):
                 if c=='orders' and role!='admin':
                     keys=(set(d)|set(old))-{'_v'}
                     bad=any(d.get(k)!=old.get(k) for k in keys if k not in OWN[role]) if role in OWN else (d.get('results')!=old.get('results') or d.get('sample')!=old.get('sample'))
-                    if bad: raise Err(403,'Your role cannot change that part of an order')
+                    if role in ('mlt','lab') and any(k in keys and d.get(k)!=old.get(k) for k in ('validated','validatedBy','validatedAt','remarks')): bad=True
+                    if role=='mlt':
+                        before=old.get('results') or {};after=d.get('results') or {}
+                        if any((before.get(t) or {}).get('Remark')!=(after.get(t) or {}).get('Remark') for t in set(before)|set(after)): bad=True
+                if c=='orders' and role!='admin' and bad: raise Err(403,'Your role cannot change that part of an order')
                 v=old['_v']+1
             else:
                 if base is not None: raise Err(409,'This record was deleted by someone else.')
-                if c=='orders' and (role not in('admin','reception') or (role!='admin' and d.get('results'))): raise Err(403,'Your role cannot create orders')
+                if c=='orders' and (role not in('admin','reception','mlt') or (role!='admin' and d.get('results'))): raise Err(403,'Your role cannot create orders')
                 if c=='pay' and not(isinstance(d.get('amt'),(int,float)) and d['amt']>0 and not d.get('void')): raise Err(400,'Invalid payment')
                 v=1
             if c=='audit': d.update(user=u['username'],role=role,ts=now())
@@ -141,7 +147,7 @@ def push(u,b,q):
         return {'rev':rev(),'vers':out}
 def nxt(u,b,q):
     n=b.get('name')
-    if u['role'] not in {'p':'admin reception','o':'admin reception','rc':'admin cashier'}.get(n,'').split(): raise Err(403,'Not allowed')
+    if u['role'] not in {'p':'admin reception mlt','o':'admin reception mlt','rc':'admin cashier'}.get(n,'').split(): raise Err(403,'Not allowed')
     with Tx():
         con.execute('INSERT INTO ctr VALUES(?,1) ON CONFLICT(name) DO UPDATE SET n=n+1',(n,))
         return {'n':con.execute('SELECT n FROM ctr WHERE name=?',(n,)).fetchone()[0]}
@@ -177,6 +183,16 @@ def pwd(u,b,q):
         if not a or not hmac.compare_digest(hp(str(b.get('old','')),a[0]),a[1]): raise Err(400,'Current password is wrong')
         setpw(u['id'],u['username'],new);hx('DELETE FROM sess WHERE code=? AND uid=? AND tok!=?',(CTX.t.code,u['id'],u['_tok']))
         audit(u['username'],u['role'],'PASSWORD_CHANGE','Own password changed')
+    return {'ok':True}
+def reject_sample(u,b,q):
+    if u['role'] not in ('admin','mlt','mls','lab'): raise Err(403,'Only laboratory staff can reject a sample')
+    oid=str(b.get('id') or '');reason=str(b.get('reason') or '').strip()
+    if not reason: raise Err(400,'A rejection reason is required')
+    with Tx():
+        o=get('orders',oid)
+        if not o: raise Err(404,'Order not found')
+        o['sample']=dict(o.get('sample') or {},status='Rejected',rejectionReason=reason,rejectedBy=u['username'],rejectedAt=now())
+        put('orders',oid,o,o['_v']+1);audit(u['username'],u['role'],'SAMPLE_REJECTED',str(o.get('oid',oid))+': '+reason)
     return {'ok':True}
 
 # ---------- subscriptions ----------
@@ -309,29 +325,38 @@ if not hone('SELECT 1 FROM owner'):
     print('\n  FIRST RUN - platform owner login (page /owner):  username: %s   password: %s\n  Keep it safe, then change it.\n'%(un,pw))
 # ---------- sign-up, sessions, login ----------
 RESERVED={'platform','owner','admin','api','www','host','demo','test'};FAILS={};REGS={}
+def facility_code(name,email,phone,trial):
+    words=re.findall(r'[A-Za-z0-9]+',name)
+    prefix=''.join(w[0] for w in words).upper()[:8] or 'LAB'
+    with HLOCK:
+        for _ in range(1000):
+            candidate='%s-%03d'%(prefix,secrets.randbelow(900)+100)
+            code=candidate.lower()
+            if not HOST.execute('SELECT 1 FROM tenants WHERE code=?',(code,)).fetchone() and not os.path.exists(DATA+'/tenants/'+code):
+                t=time.time();HOST.execute("INSERT INTO tenants VALUES(?,?,'active',?,?,?,?,?,?)",(code,name,t,t+trial*86400,'trial',email[:100],phone[:30],t))
+                return candidate,code
+    raise Err(503,'Could not assign a facility code. Please try again.')
 def newsession(code,uid):
     tok=secrets.token_urlsafe(32);hx('INSERT INTO sess VALUES(?,?,?,?)',(tok,code,uid,time.time()+SESSION_H*3600));return tok
 def register(h,b):
     ip=h.client_address[0];REGS[ip]=[x for x in REGS.get(ip,[]) if time.time()-x<3600]
     if len(REGS[ip])>=5: raise Err(429,'Too many registrations from this address. Try again later.')
-    g=lambda k:str(b.get(k,'')).strip();code=g('code').lower();name=g('name');un=g('username').lower();full=g('fullname');pw=str(b.get('password',''))
-    if not re.fullmatch(r'[a-z0-9]{3,20}',code) or code in RESERVED: raise Err(400,'Facility code: 3-20 letters or numbers, no spaces')
+    g=lambda k:str(b.get(k,'')).strip();name=g('name');un=g('username').lower();full=g('fullname');pw=str(b.get('password',''))
     if not 3<=len(name)<=80 or not full: raise Err(400,'Enter the facility name and your full name')
     if not re.fullmatch(r'[a-z0-9._-]{3,32}',un): raise Err(400,'Username: 3-32 letters, numbers, . _ -')
     if len(pw)<8: raise Err(400,'Password must be at least 8 characters')
-    if hone('SELECT 1 FROM tenants WHERE code=?',(code,)): raise Err(409,'That facility code is already taken. Choose another.')
-    REGS[ip].append(time.time());trial=float(cfg('trial_days','7'))
-    hx("INSERT INTO tenants VALUES(?,?,'active',?,?,?,?,?,?)",(code,name,time.time(),time.time()+trial*86400,'trial',g('email')[:100],g('phone')[:30],time.time()))
+    trial=float(cfg('trial_days','7'));display_code,code=facility_code(name,g('email'),g('phone'),trial)
+    REGS[ip].append(time.time())
     CTX.t=tenant(code);uid=secrets.token_hex(6)
     with Tx():
         u={'id':uid,'username':un,'name':full,'role':'admin','initials':'','signature':'','active':True,'created':now()}
         put('users',uid,u,1);setpw(uid,un,pw);put('meta','meta',{'id':'meta','lab':name,'pre':'','signer':full,'printMode':'blank'},1);audit(un,'admin','FACILITY_REGISTERED',name)
-    return {'token':newsession(code,uid),'user':u,'facility':code}
+    return {'token':newsession(code,uid),'user':u,'facility':code,'facilityDisplay':display_code}
 def login(h,b):
     fac=str(b.get('facility','')).strip().lower();un=str(b.get('username','')).strip().lower();pw=str(b.get('password',''))
     k=(h.client_address[0],fac,un);t=time.time();FAILS[k]=[x for x in FAILS.get(k,[]) if t-x<600]
     if len(FAILS[k])>=5: raise Err(429,'Too many attempts. Wait a few minutes and try again.')
-    bad=Err(401,'Invalid facility code, username or password')
+    bad=Err(401,'Invalid facility code or login details.')
     if fac=='platform':
         a=hone('SELECT salt,hash FROM owner WHERE username=?',(un,))
         if not(a and hmac.compare_digest(hp(pw,a[0]),a[1])): hp(pw,b'0'*16);FAILS[k].append(t);raise bad
@@ -392,8 +417,8 @@ ROUTES={('GET','/api/me'):lambda u,b,q:pub(u),('GET','/api/state'):state,('GET',
 ('POST','/api/next'):nxt,('POST','/api/users'):users,('POST','/api/password'):pwd,('POST','/api/backup/run'):runbk,
 ('GET','/api/sub'):sub_get,('POST','/api/sub/request'):sub_request,('POST','/api/sub/paystack'):sub_paystack,
 ('GET','/api/owner/overview'):o_overview,('POST','/api/owner/tenant'):o_tenant,('POST','/api/owner/record'):o_record,('POST','/api/owner/confirm'):o_confirm,
-('POST','/api/owner/reject'):o_reject,('POST','/api/owner/plans'):o_plans,('POST','/api/owner/cfg'):o_cfg,('POST','/api/owner/resetadmin'):o_resetadmin}
-WRITES=('/api/push','/api/next','/api/users','/api/backup/run');OWNER_OK=('/api/me','/api/logout','/api/password')
+('POST','/api/owner/reject'):o_reject,('POST','/api/owner/plans'):o_plans,('POST','/api/owner/cfg'):o_cfg,('POST','/api/owner/resetadmin'):o_resetadmin,('POST','/api/sample/reject'):reject_sample}
+WRITES=('/api/push','/api/next','/api/users','/api/backup/run','/api/sample/reject');OWNER_OK=('/api/me','/api/logout','/api/password')
 PAGES={'/':'index.html','/index.html':'index.html','/owner':'owner.html'}
 class H(BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'

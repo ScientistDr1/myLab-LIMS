@@ -161,7 +161,10 @@ To restore, you need shell access to the disk: on Render use the service Shell, 
 
 **How it works**
 - A facility opens your main address, presses "Register here", and creates its own account. That person becomes the facility administrator (there is no default admin). They then add their own staff and choose each person's role.
+- Facility codes are generated from the facility-name initials plus a unique three-digit suffix. The code is shown after signup and in the owner console facility list.
 - Staff sign in with the **facility code**, their username and password.
+- MLT users can register patients, create orders, collect samples and enter results. MLS users can add final remarks and validate and release completed reports.
+- PDF uses the browser print dialog and JPG uses browser image rendering. The server does not need Pillow, pdfkit, wkhtmltopdf or WebKit installed; JPG export falls back to the print dialog if the browser cannot render the image.
 - Every facility gets its own private database file in `data/tenants/<code>/`, with its own live sync, users, audit log and verified backups. Facilities cannot see each other's data.
 - You sign in at `/owner` (username `owner`). You see each facility's status, plan, expiry, and counts of patients, orders and users. You do not see patient records. You can extend, suspend or reactivate a facility, record a payment, confirm bank transfers, reset a facility admin's password, and set prices.
 

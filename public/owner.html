@@ -13,16 +13,18 @@ button{font:inherit;border:0;border-radius:6px;padding:7px 12px;cursor:pointer;b
 th{font-size:13px;color:var(--mut)}.st{display:flex;gap:12px;flex-wrap:wrap}.st div{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;min-width:150px}.st b{font-size:24px;display:block}
 .tag{padding:2px 9px;border-radius:10px;font-size:12px;background:#e6eef0}.tag.active{background:#d8f1e4;color:var(--ok)}.tag.trial{background:#dbeafe;color:#1e40af}.tag.expired,.tag.suspended{background:#fee2e2;color:var(--red)}
 #login{max-width:340px;margin:12vh auto;background:#fff;padding:26px;border-radius:12px;border:1px solid var(--line)}#err{color:var(--red);font-size:13px;display:none}
+.pw{position:relative}.pw input{padding-right:54px}.pw button{position:absolute;right:5px;top:3px;background:transparent;color:var(--mut);padding:5px 9px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px}
 .muted{color:var(--mut);font-size:13px}.row{display:flex;gap:6px;flex-wrap:wrap}
 </style></head><body>
 <div id="login"><h2 style="margin-top:0">Platform Owner</h2><div id="err"></div>
-<label>Username</label><input id="u" autocapitalize="none"><label>Password</label><input id="p" type="password"><p><button onclick="login()" style="width:100%">Sign in</button></p></div>
+<label>Username</label><input id="u" autocapitalize="none"><label>Password</label><div class="pw"><input id="p" type="password"><button type="button" onclick="togglePw(this)" aria-label="Show password">👁</button></div><p><button onclick="login()" style="width:100%">Sign in</button></p></div>
 <div id="app" style="display:none">
 <header><h1 id="brand">Platform Owner Console</h1><div class="row"><button class="g" onclick="load()">Refresh</button><button class="g" onclick="chpw()">Change password</button><button class="g" onclick="logout()">Sign out</button></div></header>
 <main id="main"></main></div>
 <script>
 let TOK=sessionStorage.getItem('owner_tok')||'',D=null,timer=null;
+function togglePw(b){const x=document.getElementById('p'),show=x.type==='password';x.type=show?'text':'password';b.textContent=show?'🙈':'👁';b.setAttribute('aria-label',show?'Hide password':'Show password')}
 const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'₦'+(+n||0).toLocaleString('en-NG',{maximumFractionDigits:2});
 const dt=t=>t?new Date(t*1000).toLocaleString():'—';
@@ -51,7 +53,7 @@ function draw(){
   ${pend.map(p=>`<tr><td>${dt(p.created)}</td><td>${e(p.code)}</td><td>${e(p.plan)}</td><td><b>${money(p.amount)}</b></td><td>${e(p.method)}</td><td>${e(p.ref)}</td><td>${e(p.note)}</td>
   <td class="row"><button onclick="act('/owner/confirm',{id:'${p.id}'},'Confirm that ${money(p.amount)} has been received?')">Confirm received</button><button class="d" onclick="act('/owner/reject',{id:'${p.id}'},'Reject this payment request?')">Reject</button></td></tr>`).join('')}</tbody></table></div>`:''}
   <h2>Facilities</h2><div class="tw"><table><thead><tr><th>Facility</th><th>Status</th><th>Plan</th><th>Expires</th><th>Patients</th><th>Orders</th><th>Users</th><th>Last sign-in</th><th>Backup</th><th></th></tr></thead><tbody>
-  ${T.length?T.map(t=>`<tr><td><b>${e(t.name)}</b><br><span class="muted">${e(t.code)} · ${e(t.phone||t.email||'')}</span></td><td><span class="tag ${t.status}">${t.status}</span></td><td>${e(t.plan)}</td><td>${dt(t.until)}</td><td>${t.patients}</td><td>${t.orders}</td><td>${t.users}</td><td>${dt(t.last_login)}</td>
+  ${T.length?T.map(t=>`<tr><td><b>${e(t.name)}</b><br><span class="muted">Facility code: <b>${e(t.code.toUpperCase())}</b> · ${e(t.phone||t.email||'')}</span><br><button class="g" onclick="copyCode('${e(t.code)}')">Copy facility code</button></td><td><span class="tag ${t.status}">${t.status}</span></td><td>${e(t.plan)}</td><td>${dt(t.until)}</td><td>${t.patients}</td><td>${t.orders}</td><td>${t.users}</td><td>${dt(t.last_login)}</td>
   <td>${t.backup?(t.backup.ok?'<span class="tag active">OK</span>':'<span class="tag expired">FAILED</span>'):'—'}</td>
   <td class="row"><button onclick="rec('${t.code}')">Record payment</button><button class="g" onclick="ext('${t.code}')">Extend</button>
   ${t.status==='suspended'?`<button class="g" onclick="act('/owner/tenant',{code:'${t.code}',action:'activate'})">Activate</button>`:`<button class="d" onclick="act('/owner/tenant',{code:'${t.code}',action:'suspend'},'Suspend ${e(t.name)}? Nobody there can sign in until you activate it again.')">Suspend</button>`}
@@ -67,6 +69,7 @@ function draw(){
   ${D.payments.map(p=>`<tr><td>${dt(p.created)}</td><td>${e(p.code)}</td><td>${e(p.plan)}</td><td>${money(p.amount)}</td><td>${e(p.method)}</td><td>${e(p.ref)}</td><td>${e(p.status)}</td><td>${e(p.by||'')}</td></tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--mut)">No payments yet</td></tr>'}</tbody></table></div>`;
 }
 function ext(c){const d=prompt('Add how many days of access to '+c+'?','30');if(d)act('/owner/tenant',{code:c,action:'extend',days:d});}
+function copyCode(c){if(!navigator.clipboard||!navigator.clipboard.writeText){alert('Facility code: '+c.toUpperCase());return;}navigator.clipboard.writeText(c.toUpperCase()).then(()=>alert('Facility code copied.')).catch(()=>alert('Facility code: '+c.toUpperCase()));}
 function rec(c){
   const plan=prompt('Which plan did '+c+' pay for? Type: '+D.plans.map(p=>p.id).join(', '),'monthly');if(!plan)return;
   const pl=D.plans.find(p=>p.id===plan);const amt=prompt('Amount received (₦)',pl?pl.price:'');if(!amt)return;
