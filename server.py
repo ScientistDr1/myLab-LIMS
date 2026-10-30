@@ -3,13 +3,14 @@
 its own admin and users, live sync across its devices, verified backups and a paid subscription
 (daily / monthly / annual). The platform owner controls facilities from /owner and cannot read patient data.
 Python 3.9+, no packages to install.   Run: python3 server.py"""
-import calendar,hashlib,hmac,json,os,queue,re,secrets,sqlite3,ssl,sys,threading,time,urllib.request
+import html as _html,calendar,hashlib,hmac,json,os,queue,re,secrets,sqlite3,ssl,sys,threading,time,urllib.request
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import urlparse,parse_qs
 HERE=os.path.dirname(os.path.abspath(__file__));DATA=os.environ.get('LIMS_DATA',HERE+'/data');os.makedirs(DATA+'/tenants',exist_ok=True)
 PORT=int(os.environ.get('PORT','8080'));BK_HOURS=float(os.environ.get('LIMS_BACKUP_HOURS','6'))
 KEEP=int(os.environ.get('LIMS_BACKUP_KEEP','30'));SESSION_H=float(os.environ.get('LIMS_SESSION_HOURS','12'))
-PAYSTACK=os.environ.get('PAYSTACK_SECRET','');PUBLIC_URL=os.environ.get('LIMS_PUBLIC_URL','').rstrip('/')
+PAYSTACK=os.environ.get('PAYSTACK_SECRET','');PUBLIC_URL=(os.environ.get('LIMS_PUBLIC_URL') or os.environ.get('RENDER_EXTERNAL_URL','')).rstrip('/')
+DEMO=bool(os.environ.get('LIMS_DEMO'));PROXY=bool(os.environ.get('LIMS_BEHIND_PROXY') or os.environ.get('RENDER'))   # behind a proxy every request seems to come from one address
 # ---------- platform (host) database: facilities, plans, payments, sessions ----------
 HLOCK=threading.RLock();HOST=sqlite3.connect(DATA+'/host.db',check_same_thread=False,isolation_level=None);HOST.execute('PRAGMA journal_mode=WAL')
 HOST.executescript("""CREATE TABLE IF NOT EXISTS tenants(code TEXT PRIMARY KEY,name TEXT,status TEXT,created REAL,until REAL,plan TEXT,email TEXT,phone TEXT,last_login REAL);
@@ -17,7 +18,9 @@ CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,name TEXT,days INTEGER,pric
 CREATE TABLE IF NOT EXISTS pay(id TEXT PRIMARY KEY,code TEXT,plan TEXT,amount REAL,days INTEGER,method TEXT,ref TEXT,status TEXT,created REAL,done REAL,by TEXT,note TEXT);
 CREATE TABLE IF NOT EXISTS sess(tok TEXT PRIMARY KEY,code TEXT,uid TEXT,exp REAL);
 CREATE TABLE IF NOT EXISTS cfg(k TEXT PRIMARY KEY,v TEXT);
-CREATE TABLE IF NOT EXISTS owner(username TEXT PRIMARY KEY,salt BLOB,hash BLOB);""")
+CREATE TABLE IF NOT EXISTS owner(username TEXT PRIMARY KEY,salt BLOB,hash BLOB);
+CREATE TABLE IF NOT EXISTS events(ts REAL,kind TEXT,code TEXT,ip TEXT,detail TEXT);
+CREATE TABLE IF NOT EXISTS tickets(id TEXT PRIMARY KEY,code TEXT,user TEXT,name TEXT,role TEXT,cat TEXT,subject TEXT,body TEXT,status TEXT,created REAL,updated REAL,reply TEXT);""")
 def hall(q,a=()):
     with HLOCK: return HOST.execute(q,a).fetchall()
 def hone(q,a=()):
@@ -26,6 +29,46 @@ def hx(q,a=()):
     with HLOCK: HOST.execute(q,a)
 def cfg(k,d=''):
     r=hone('SELECT v FROM cfg WHERE k=?',(k,));return r[0] if r else d
+START=time.time();MET={};RR={};TK={}
+SUPPORT_KEYS=('support','support_phone','support_whatsapp','support_email','support_hours')
+def sup_cfg(): return {k:cfg(k,'') for k in SUPPORT_KEYS}
+def public_cfg(): return dict({'demo':DEMO,'brand':cfg('brand','myLab LIMS'),'privacy':bool(cfg('privacy').strip()),'terms':bool(cfg('terms').strip()),'legal_updated':cfg('legal_updated','')},**sup_cfg())
+def legal_page(kind):   # the owner's text, shown as a simple public page: '# ' heading, '## ' sub-heading, '- ' bullets, blank line = new paragraph
+    title={'privacy':'Privacy Policy','terms':'Terms of Service'}[kind];txt=cfg(kind,'').strip();brand=_html.escape(cfg('brand','myLab LIMS'))
+    out=[];para=[];lst=[]
+    def flush():
+        nonlocal para,lst
+        if para: out.append('<p>'+'<br>'.join(para)+'</p>');para=[]
+        if lst: out.append('<ul>'+''.join('<li>%s</li>'%i for i in lst)+'</ul>');lst=[]
+    for ln in txt.splitlines():
+        t=ln.strip();x=_html.escape(t)
+        if not t: flush()
+        elif t.startswith('## '): flush();out.append('<h3>%s</h3>'%_html.escape(t[3:]))
+        elif t.startswith('# '): flush();out.append('<h2>%s</h2>'%_html.escape(t[2:]))
+        elif t.startswith('- '):
+            if para: flush()
+            lst.append(_html.escape(t[2:]))
+        else:
+            if lst: flush()
+            para.append(x)
+    flush()
+    body=''.join(out) if txt else '<p>This document has not been published yet. Please check back soon.</p>'
+    upd=cfg('legal_updated','');c=sup_cfg()
+    contact=' &middot; '.join(_html.escape(v) for v in (c['support_email'],c['support_phone']) if v)
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%s - %s</title>'
+      '<style>body{margin:0;font:16px/1.65 system-ui,Segoe UI,Roboto,sans-serif;color:#16262c;background:#f2f5f6}main{max-width:780px;margin:0 auto;padding:24px 18px 60px}'
+      'article{background:#fff;border:1px solid #d9e2e5;border-radius:12px;padding:22px 24px}h1{margin:0 0 4px;font-size:26px}h2{margin:26px 0 6px;font-size:20px}h3{margin:18px 0 4px;font-size:17px}.m{color:#5d7078;font-size:14px}a{color:#1b7f92}</style></head>'
+      '<body><main><p><a href="/">&larr; Back to %s</a></p><article><h1>%s</h1><div class="m">%s</div>%s</article><p class="m">%s</p></main></body></html>')%(title,brand,brand,title,('Last updated: '+_html.escape(upd)) if upd else '',body,('Questions? '+contact) if contact else '')
+def evt(kind,code='',ip='',detail=''):
+    try: hx('INSERT INTO events VALUES(?,?,?,?,?)',(time.time(),kind,code,ip,str(detail)[:200]))
+    except Exception: pass
+def cip(h):   # client address for the event log only (behind a proxy this is the address the proxy reports)
+    xf=h.headers.get('X-Forwarded-For','');return (xf.split(',')[0].strip() if xf else h.client_address[0])[:45]
+def meter(code):
+    m=int(time.time()//60);r=MET.setdefault(m,[0,0,0]);r[0]+=1
+    if code>=500: r[2]+=1
+    elif code>=400: r[1]+=1
+    for k in [k for k in MET if k<m-120]: del MET[k]
 def setcfg(k,v): hx('INSERT INTO cfg VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v',(k,str(v)))
 if not hone('SELECT 1 FROM plans'):
     for i,n,d in (('daily','Daily',1),('monthly','Monthly',30),('annual','Annual',365)): hx('INSERT INTO plans VALUES(?,?,?,0)',(i,n,d))
@@ -53,14 +96,16 @@ class _Lock:
     def __exit__(s,*a): s.release()
 con=_Con();LOCK=_Lock()
 # collection -> (roles that read, roles that create/update, roles that delete)
-ALL='admin reception cashier phleb lab mlt mls auditor'
-R={'patients':(ALL,'admin reception mlt','admin'),'orders':(ALL,'admin reception phleb lab mlt mls','admin'),
-'pay':('admin cashier auditor','admin cashier',''),'qcmats':('admin lab mls auditor','admin lab mls',''),
-'qcruns':('admin lab mls auditor','admin lab mls',''),'tests':(ALL,'admin','admin'),
-'audit':('admin lab mls auditor',ALL,''),'users':(ALL,'',''),'meta':(ALL,'admin',''),'brand':(ALL,'admin',''),'bk':(ALL,'','')}
-OWN={'phleb':('sample',),'lab':('results','updated','updatedBy','validated','validatedBy','validatedAt','remarks'),'mlt':('results','updated','updatedBy','sample'),'mls':('results','updated','updatedBy','sample','validated','validatedBy','validatedAt','remarks')}  # parts of an order each role may change
+ALL='admin reception cashier phleb mlt lab auditor'      # lab = Medical Laboratory Scientist (MLS), mlt = Medical Laboratory Technician
+R={'patients':(ALL,'admin reception mlt lab','admin'),'orders':(ALL,'admin reception phleb mlt lab','admin'),
+'pay':('admin cashier auditor','admin cashier',''),'qcmats':('admin lab mlt auditor','admin lab mlt',''),
+'qcruns':('admin lab mlt auditor','admin lab mlt',''),'tests':(ALL,'admin','admin'),
+'audit':('admin lab mlt auditor',ALL,''),'users':(ALL,'',''),'meta':(ALL,'admin',''),'brand':(ALL,'admin',''),'bk':(ALL,'',''),
+'resetreq':('admin','','admin')}
+OWN={'phleb':('sample',),'mlt':('sample','results','updated','updatedBy','rejected'),'lab':('sample','results','updated','updatedBy','rejected','validated')}  # parts of an order each role may change
+def remarks(res): return {t:r.get('Remark') for t,r in (res or {}).items() if isinstance(r,dict) and r.get('Remark')}
 APPEND=('audit','qcruns');ROLES=tuple(ALL.split())
-CSP="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+CSP="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'"
 class Err(Exception):
     def __init__(s,code,msg): s.code,s.msg=code,msg
 now=lambda:time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
@@ -121,8 +166,6 @@ def push(u,b,q):
                 if old: rm(c,i)
                 out.append(0);continue
             d=dict(ch.get('doc') or {});base=d.pop('_v',None);d['id']=i
-            if role not in ('admin','lab','mls') and any(d.get(k) for k in ('validated','validatedBy','validatedAt','remarks')): raise Err(403,'Only a Medical Laboratory Scientist can validate or add final remarks')
-            if (d.get('sample') or {}).get('status')=='Rejected' and not str((d.get('sample') or {}).get('rejectionReason') or '').strip(): raise Err(400,'A rejection reason is required')
             if len(json.dumps(d))>(4000000 if c=='brand' else 600000): raise Err(413,'Record too large')
             if old:
                 if c in APPEND: raise Err(403,'This record cannot be edited')
@@ -130,16 +173,15 @@ def push(u,b,q):
                 if c=='pay' and role!='admin': raise Err(403,'Only an administrator can change a payment')
                 if c=='orders' and role!='admin':
                     keys=(set(d)|set(old))-{'_v'}
-                    bad=any(d.get(k)!=old.get(k) for k in keys if k not in OWN[role]) if role in OWN else (d.get('results')!=old.get('results') or d.get('sample')!=old.get('sample'))
-                    if role in ('mlt','lab') and any(k in keys and d.get(k)!=old.get(k) for k in ('validated','validatedBy','validatedAt','remarks')): bad=True
-                    if role=='mlt':
-                        before=old.get('results') or {};after=d.get('results') or {}
-                        if any((before.get(t) or {}).get('Remark')!=(after.get(t) or {}).get('Remark') for t in set(before)|set(after)): bad=True
-                if c=='orders' and role!='admin' and bad: raise Err(403,'Your role cannot change that part of an order')
+                    bad=any(d.get(k)!=old.get(k) for k in keys if k not in OWN[role]) if role in OWN else any(d.get(k)!=old.get(k) for k in ('results','sample','validated','rejected'))
+                    if not bad and role in('mlt','lab') and old.get('validated') and d.get('validated') and d.get('results')!=old.get('results'): bad=True   # validated results are locked
+                    if not bad and role=='mlt' and remarks(d.get('results'))!=remarks(old.get('results')): bad=True                                    # remarks: MLS only
+                    if not bad and role=='lab' and d.get('validated') and d.get('validated')!=old.get('validated') and (d['validated'].get('by')!=u['username']): bad=True  # cannot sign for someone else
+                    if bad: raise Err(403,'Your role cannot change that part of an order')
                 v=old['_v']+1
             else:
                 if base is not None: raise Err(409,'This record was deleted by someone else.')
-                if c=='orders' and (role not in('admin','reception','mlt') or (role!='admin' and d.get('results'))): raise Err(403,'Your role cannot create orders')
+                if c=='orders' and (role not in('admin','reception','mlt','lab') or (role!='admin' and (d.get('results') or d.get('validated') or d.get('rejected')))): raise Err(403,'Your role cannot create orders')
                 if c=='pay' and not(isinstance(d.get('amt'),(int,float)) and d['amt']>0 and not d.get('void')): raise Err(400,'Invalid payment')
                 v=1
             if c=='audit': d.update(user=u['username'],role=role,ts=now())
@@ -147,7 +189,7 @@ def push(u,b,q):
         return {'rev':rev(),'vers':out}
 def nxt(u,b,q):
     n=b.get('name')
-    if u['role'] not in {'p':'admin reception mlt','o':'admin reception mlt','rc':'admin cashier'}.get(n,'').split(): raise Err(403,'Not allowed')
+    if u['role'] not in {'p':'admin reception mlt lab','o':'admin reception mlt lab','rc':'admin cashier'}.get(n,'').split(): raise Err(403,'Not allowed')
     with Tx():
         con.execute('INSERT INTO ctr VALUES(?,1) ON CONFLICT(name) DO UPDATE SET n=n+1',(n,))
         return {'n':con.execute('SELECT n FROM ctr WHERE name=?',(n,)).fetchone()[0]}
@@ -171,7 +213,9 @@ def users(u,b,q):
         others=[x for x in con.execute("SELECT doc FROM rec WHERE coll='users' AND id!=?",(d['id'],)) if (lambda j:j['role']=='admin' and j.get('active',True))(json.loads(x[0]))]
         if not(d['role']=='admin' and d.get('active',True)) and not others: raise Err(400,'There must be at least one active administrator')
         v=old['_v']+1 if old else 1;put('users',d['id'],d,v)
-        if pw: setpw(d['id'],d['username'],pw)
+        if pw:
+            setpw(d['id'],d['username'],pw)
+            if get('resetreq','rq_'+d['username']): rm('resetreq','rq_'+d['username'])
         if old and d['id']!=u['id'] and (not d.get('active',True) or pw or old['role']!=d['role']): hx('DELETE FROM sess WHERE code=? AND uid=?',(CTX.t.code,d['id']))
         audit(u['username'],'admin','USER_UPDATE' if old else 'USER_CREATE','%s (%s)%s%s'%(d['username'],d['role'],' password set' if pw else '','' if d.get('active',True) else ' disabled'))
         d['_v']=v;return {'user':d}
@@ -183,16 +227,6 @@ def pwd(u,b,q):
         if not a or not hmac.compare_digest(hp(str(b.get('old','')),a[0]),a[1]): raise Err(400,'Current password is wrong')
         setpw(u['id'],u['username'],new);hx('DELETE FROM sess WHERE code=? AND uid=? AND tok!=?',(CTX.t.code,u['id'],u['_tok']))
         audit(u['username'],u['role'],'PASSWORD_CHANGE','Own password changed')
-    return {'ok':True}
-def reject_sample(u,b,q):
-    if u['role'] not in ('admin','mlt','mls','lab'): raise Err(403,'Only laboratory staff can reject a sample')
-    oid=str(b.get('id') or '');reason=str(b.get('reason') or '').strip()
-    if not reason: raise Err(400,'A rejection reason is required')
-    with Tx():
-        o=get('orders',oid)
-        if not o: raise Err(404,'Order not found')
-        o['sample']=dict(o.get('sample') or {},status='Rejected',rejectionReason=reason,rejectedBy=u['username'],rejectedAt=now())
-        put('orders',oid,o,o['_v']+1);audit(u['username'],u['role'],'SAMPLE_REJECTED',str(o.get('oid',oid))+': '+reason)
     return {'ok':True}
 
 # ---------- subscriptions ----------
@@ -240,7 +274,7 @@ def sub_paystack(u,b,q):
     return {'url':r['data']['authorization_url'],'ref':ref}
 def paystack_hook(h,raw):
     sig=h.headers.get('x-paystack-signature','')
-    if not PAYSTACK or not hmac.compare_digest(hmac.new(PAYSTACK.encode(),raw,hashlib.sha512).hexdigest(),sig): raise Err(401,'bad signature')
+    if not PAYSTACK or not hmac.compare_digest(hmac.new(PAYSTACK.encode(),raw,hashlib.sha512).hexdigest(),sig): evt('BAD_WEBHOOK_SIGNATURE','',cip(h),'');raise Err(401,'bad signature')
     ev=json.loads(raw or b'{}')
     if ev.get('event')=='charge.success':
         d=ev.get('data') or {};p=hone("SELECT id,amount FROM pay WHERE ref=? AND method='paystack' AND status='pending'",(d.get('reference'),))
@@ -258,10 +292,44 @@ def o_overview(u,b,q):
             bk=get('bk','status');st=dict(patients=c('patients'),orders=c('orders'),users=c('users'),backup=bk and {'when':bk['when'],'ok':bk['ok']})
         rows.append(dict(code=code,name=name,email=email,phone=phone,created=created,last_login=last,**subinfo(code),**st))
     pay=[dict(zip(('id','code','plan','amount','days','method','ref','status','created','done','by','note'),r)) for r in hall('SELECT id,code,plan,amount,days,method,ref,status,created,done,by,note FROM pay ORDER BY created DESC LIMIT 200')]
+    tk=[dict(zip(('id','code','user','name','role','cat','subject','body','status','created','updated','reply'),r)) for r in hall("SELECT id,code,user,name,role,cat,subject,body,status,created,updated,reply FROM tickets ORDER BY (status='open') DESC,created DESC LIMIT 100")]
     ds=time.strftime('%Y-%m-%d');ms=time.strftime('%Y-%m')
     paid=[p for p in pay if p['status']=='paid'];f=lambda fmt:sum(p['amount'] for p in paid if time.strftime(fmt,time.localtime(p['done'] or 0))==time.strftime(fmt))
-    return {'tenants':rows,'payments':pay,'plans':plans(),'revenue':{'today':f('%Y-%m-%d'),'month':f('%Y-%m'),'all':sum(p['amount'] for p in paid)},
-      'cfg':{k:cfg(k,d) for k,d in (('trial_days','7'),('bank',''),('support',''),('brand','myLab LIMS'))},'paystack':bool(PAYSTACK)}
+    return {'tenants':rows,'tickets':tk,'payments':pay,'plans':plans(),'revenue':{'today':f('%Y-%m-%d'),'month':f('%Y-%m'),'all':sum(p['amount'] for p in paid)},
+      'demo':DEMO,'cfg':{k:cfg(k,d) for k,d in (('trial_days','7'),('bank',''),('brand','myLab LIMS'),('privacy',''),('terms',''),('legal_updated',''))+tuple((k,'') for k in SUPPORT_KEYS)},'paystack':bool(PAYSTACK)}
+def o_monitor(u,b,q):   # activity metadata only - never patient records
+    need_owner(u);n=time.time();cur=int(n//60);mm=[v for k,v in MET.items() if k>=cur-60]
+    ev=[dict(zip(('ts','kind','code','ip','detail'),r)) for r in hall('SELECT ts,kind,code,ip,detail FROM events ORDER BY ts DESC LIMIT 150')]
+    sess=dict(hall('SELECT code,COUNT(*) FROM sess WHERE exp>? GROUP BY code',(n,)));fails=dict(hall("SELECT code,COUNT(*) FROM events WHERE kind='LOGIN_FAILED' AND ts>? GROUP BY code",(n-86400,)))
+    fac=[]
+    for code,name,last in hall('SELECT code,name,last_login FROM tenants ORDER BY last_login DESC'):
+        try: size=os.path.getsize(DATA+'/tenants/'+code+'/lims.db')
+        except OSError: size=0
+        fac.append({'code':code,'name':name,'last_login':last,'sessions':sess.get(code,0),'failed24':fails.get(code,0),'db_kb':size//1024})
+    return {'uptime':n-START,'requests':sum(v[0] for v in mm),'client_errors':sum(v[1] for v in mm),'server_errors':sum(v[2] for v in mm),'sessions':sum(sess.values()),
+      'counts24':dict(hall('SELECT kind,COUNT(*) FROM events WHERE ts>? GROUP BY kind',(n-86400,))),'events':ev,'facilities':fac}
+TKF=('id','cat','subject','body','status','created','updated','reply','user','name')
+def sup_get(u,b,q):
+    rows=hall('SELECT id,cat,subject,body,status,created,updated,reply,user,name FROM tickets WHERE code=? ORDER BY created DESC LIMIT 50',(u['_fid'],))
+    return {'contact':sup_cfg(),'tickets':[dict(zip(TKF,r)) for r in rows if u['role']=='admin' or r[8]==u['username']]}
+def sup_new(u,b,q):
+    k=(u['_fid'],u['username']);TK[k]=[x for x in TK.get(k,[]) if time.time()-x<3600]
+    if len(TK[k])>=5: raise Err(429,'You have sent several requests in the last hour. Please wait, or use the phone or WhatsApp contact.')
+    subj=str(b.get('subject','')).strip();body=str(b.get('body','')).strip();cat=str(b.get('cat','Other'))[:40]
+    if len(subj)<3 or len(body)<10: raise Err(400,'Please enter a subject and describe the problem in a sentence or two.')
+    tid=secrets.token_hex(5);TK[k].append(time.time())
+    hx("INSERT INTO tickets VALUES(?,?,?,?,?,?,?,?,'open',?,?,'')",(tid,u['_fid'],u['username'],u['name'],u['role'],cat,subj[:120],body[:3000],time.time(),time.time()))
+    evt('SUPPORT_REQUEST',u['_fid'],'',subj[:60]);return {'ok':True,'id':tid}
+def o_ticket(u,b,q):
+    need_owner(u);tid=b.get('id');a=b.get('action');r=str(b.get('reply','')).strip()[:3000]
+    if not hone('SELECT 1 FROM tickets WHERE id=?',(tid,)): raise Err(404,'No such request')
+    if a in('reply','reply_close'):
+        if not r: raise Err(400,'Type a reply first.')
+        hx('UPDATE tickets SET reply=?,status=?,updated=? WHERE id=?',(r,'closed' if a=='reply_close' else 'open',time.time(),tid))
+    elif a=='close': hx("UPDATE tickets SET status='closed',updated=? WHERE id=?",(time.time(),tid))
+    elif a=='reopen': hx("UPDATE tickets SET status='open',updated=? WHERE id=?",(time.time(),tid))
+    else: raise Err(400,'Unknown action')
+    return {'ok':True}
 def o_tenant(u,b,q):
     need_owner(u);code=b.get('code');a=b.get('action')
     if not hone('SELECT 1 FROM tenants WHERE code=?',(code,)): raise Err(404,'No such facility')
@@ -293,10 +361,14 @@ def o_plans(u,b,q):
         if pr<0: raise Err(400,'Price cannot be negative')
         hx('UPDATE plans SET price=?,name=? WHERE id=?',(pr,str(p.get('name',''))[:30] or p['id'],p['id']))
     return {'ok':True}
+LIM={'privacy':60000,'terms':60000,'support_phone':40,'support_whatsapp':30,'support_email':120,'support_hours':160}
 def o_cfg(u,b,q):
     need_owner(u)
-    for k in ('trial_days','bank','support','brand'):
-        if k in b: setcfg(k,str(b[k])[:600])
+    for k in ('trial_days','bank','support','brand')+SUPPORT_KEYS[1:]+('privacy','terms'):
+        if k in b:
+            v=str(b[k])
+            if k in('privacy','terms') and v.strip()!=cfg(k,'').strip(): setcfg('legal_updated',time.strftime('%d %B %Y'))
+            setcfg(k,v[:LIM.get(k,600)])
     return {'ok':True}
 def o_resetadmin(u,b,q):   # help a facility whose admin lost the password
     need_owner(u);code=b.get('code');un=str(b.get('username','')).lower();pw=str(b.get('password',''))
@@ -325,59 +397,78 @@ if not hone('SELECT 1 FROM owner'):
     print('\n  FIRST RUN - platform owner login (page /owner):  username: %s   password: %s\n  Keep it safe, then change it.\n'%(un,pw))
 # ---------- sign-up, sessions, login ----------
 RESERVED={'platform','owner','admin','api','www','host','demo','test'};FAILS={};REGS={}
-def facility_code(name,email,phone,trial):
-    words=re.findall(r'[A-Za-z0-9]+',name)
-    prefix=''.join(w[0] for w in words).upper()[:8] or 'LAB'
-    with HLOCK:
-        for _ in range(1000):
-            candidate='%s-%03d'%(prefix,secrets.randbelow(900)+100)
-            code=candidate.lower()
-            if not HOST.execute('SELECT 1 FROM tenants WHERE code=?',(code,)).fetchone() and not os.path.exists(DATA+'/tenants/'+code):
-                t=time.time();HOST.execute("INSERT INTO tenants VALUES(?,?,'active',?,?,?,?,?,?)",(code,name,t,t+trial*86400,'trial',email[:100],phone[:30],t))
-                return candidate,code
-    raise Err(503,'Could not assign a facility code. Please try again.')
 def newsession(code,uid):
-    tok=secrets.token_urlsafe(32);hx('INSERT INTO sess VALUES(?,?,?,?)',(tok,code,uid,time.time()+SESSION_H*3600));return tok
+    tok=secrets.token_urlsafe(32);hx('INSERT INTO sess VALUES(?,?,?,?)',(hashlib.sha256(tok.encode()).hexdigest(),code,uid,time.time()+SESSION_H*3600));return tok   # only a hash of the token is stored
+def make_code(name):
+    words=re.findall(r'[A-Za-z0-9]+',name);ini=''.join(w[0] for w in words)[:5].upper()
+    if len(ini)<2: ini=(re.sub(r'[^A-Za-z0-9]','',name)[:3] or 'LAB').upper()
+    for _ in range(300):
+        c='%s-%d'%(ini,secrets.randbelow(9000)+1000);cl=c.lower()
+        if not hone('SELECT 1 FROM tenants WHERE code=?',(cl,)) and not os.path.exists(DATA+'/tenants/'+cl): return cl
+    raise Err(503,'Could not create a facility code just now. Please try again.')
 def register(h,b):
-    ip=h.client_address[0];REGS[ip]=[x for x in REGS.get(ip,[]) if time.time()-x<3600]
-    if len(REGS[ip])>=5: raise Err(429,'Too many registrations from this address. Try again later.')
-    g=lambda k:str(b.get(k,'')).strip();name=g('name');un=g('username').lower();full=g('fullname');pw=str(b.get('password',''))
-    if not 3<=len(name)<=80 or not full: raise Err(400,'Enter the facility name and your full name')
+    ip='*' if PROXY else h.client_address[0];REGS[ip]=[x for x in REGS.get(ip,[]) if time.time()-x<3600]
+    if len(REGS[ip])>=(20 if PROXY else 5): raise Err(429,'Too many registrations from this address. Try again later.')
+    g=lambda k:str(b.get(k,'')).strip();name=g('name');un=g('username').lower();full=g('fullname');pw=str(b.get('password',''));em=g('email')
+    if not 3<=len(name)<=80: raise Err(400,'Enter the facility name (3 to 80 characters).')
+    if not full: raise Err(400,'Enter your full name.')
     if not re.fullmatch(r'[a-z0-9._-]{3,32}',un): raise Err(400,'Username: 3-32 letters, numbers, . _ -')
-    if len(pw)<8: raise Err(400,'Password must be at least 8 characters')
-    trial=float(cfg('trial_days','7'));display_code,code=facility_code(name,g('email'),g('phone'),trial)
-    REGS[ip].append(time.time())
+    if len(pw)<8: raise Err(400,'Password must be at least 8 characters.')
+    if em and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+',em): raise Err(400,'That email address does not look right.')
+    legal=bool(cfg('privacy').strip() or cfg('terms').strip())
+    if legal and not b.get('agree'): raise Err(400,'Please tick the box to accept the Privacy Policy and Terms.')
+    REGS[ip].append(time.time());trial=float(cfg('trial_days','7'))
+    for _ in range(20):
+        code=make_code(name)
+        try: hx("INSERT INTO tenants VALUES(?,?,'active',?,?,?,?,?,?)",(code,name,time.time(),time.time()+trial*86400,'trial',em[:100],g('phone')[:30],time.time()));break
+        except sqlite3.IntegrityError: continue
+    else: raise Err(503,'Could not create a facility code just now. Please try again.')
     CTX.t=tenant(code);uid=secrets.token_hex(6)
     with Tx():
         u={'id':uid,'username':un,'name':full,'role':'admin','initials':'','signature':'','active':True,'created':now()}
-        put('users',uid,u,1);setpw(uid,un,pw);put('meta','meta',{'id':'meta','lab':name,'pre':'','signer':full,'printMode':'blank'},1);audit(un,'admin','FACILITY_REGISTERED',name)
-    return {'token':newsession(code,uid),'user':u,'facility':code,'facilityDisplay':display_code}
+        put('users',uid,u,1);setpw(uid,un,pw);put('meta','meta',{'id':'meta','lab':name,'pre':'','signer':full,'printMode':'blank'},1);audit(un,'admin','FACILITY_REGISTERED',name+' ('+code.upper()+')'+(' | accepted Privacy Policy/Terms dated '+cfg('legal_updated','?') if legal else ''))
+    evt('REGISTER',code,cip(h),name);return {'token':newsession(code,uid),'user':u,'facility':code,'facility_code':code.upper()}
 def login(h,b):
     fac=str(b.get('facility','')).strip().lower();un=str(b.get('username','')).strip().lower();pw=str(b.get('password',''))
-    k=(h.client_address[0],fac,un);t=time.time();FAILS[k]=[x for x in FAILS.get(k,[]) if t-x<600]
-    if len(FAILS[k])>=5: raise Err(429,'Too many attempts. Wait a few minutes and try again.')
-    bad=Err(401,'Invalid facility code or login details.')
+    ip=cip(h);k=('*' if PROXY else h.client_address[0],fac,un);t=time.time();FAILS[k]=[x for x in FAILS.get(k,[]) if t-x<600]
+    if len(FAILS[k])>=5: evt('LOCKOUT',fac[:30],ip,un[:30]);raise Err(429,'Too many attempts. Wait a few minutes and try again.')
+    def fail():
+        FAILS[k].append(t);evt('LOGIN_FAILED',fac[:30],ip,un[:30]);return Err(401,'Invalid facility code or login details.')
     if fac=='platform':
         a=hone('SELECT salt,hash FROM owner WHERE username=?',(un,))
-        if not(a and hmac.compare_digest(hp(pw,a[0]),a[1])): hp(pw,b'0'*16);FAILS[k].append(t);raise bad
-        return {'token':newsession('platform',un),'user':{'id':un,'username':un,'name':'Platform Owner','role':'owner'}}
+        if not(a and hmac.compare_digest(hp(pw,a[0]),a[1])): hp(pw,b'0'*16);raise fail()
+        evt('OWNER_LOGIN','platform',ip,un);return {'token':newsession('platform',un),'user':{'id':un,'username':un,'name':'Platform Owner','role':'owner'}}
     ti=hone('SELECT status FROM tenants WHERE code=?',(fac,))
-    if not ti: hp(pw,b'0'*16);FAILS[k].append(t);raise bad
-    if ti[0]=='suspended': raise Err(403,'This facility account is suspended. Contact the platform owner.')
+    if not ti: hp(pw,b'0'*16);raise fail()
     CTX.t=tenant(fac)
     with LOCK: a=con.execute('SELECT uid,salt,hash FROM auth WHERE username=?',(un,)).fetchone()
     ok=hmac.compare_digest(hp(pw,a[1]),a[2]) if a else (hp(pw,b'0'*16) and False)
     u=get('users',a[0]) if ok else None
     if not u or not u.get('active',True):
-        FAILS[k].append(t)
         with Tx(): audit(un[:40] or '?','unknown','LOGIN_FAILED','Invalid credentials')
-        raise bad
+        raise fail()
+    if ti[0]=='suspended': evt('SUSPENDED_LOGIN',fac,ip,un);raise Err(403,'This facility account is suspended. Please contact the platform owner.')
     with Tx(): audit(u['username'],u['role'],'LOGIN','Signed in')
     hx('UPDATE tenants SET last_login=? WHERE code=?',(time.time(),fac));FAILS.pop(k,None);u.pop('_v',None)
     return {'token':newsession(fac,u['id']),'user':u,'facility':fac}
+def reset_request(h,b):
+    fac=str(b.get('facility','')).strip().lower();un=str(b.get('username','')).strip().lower();ip=cip(h);k='*' if PROXY else h.client_address[0]
+    RR[k]=[x for x in RR.get(k,[]) if time.time()-x<600]
+    if len(RR[k])>=5: raise Err(429,'Too many requests. Please wait a few minutes and try again.')
+    RR[k].append(time.time())
+    if un and hone('SELECT 1 FROM tenants WHERE code=?',(fac,)):
+        CTX.t=tenant(fac)
+        with LOCK: a=con.execute('SELECT uid FROM auth WHERE username=?',(un,)).fetchone()
+        u=get('users',a[0]) if a else None
+        if u and u.get('active',True) and u['role']!='admin':
+            with Tx():
+                rid='rq_'+un
+                if not get('resetreq',rid): put('resetreq',rid,{'id':rid,'username':un,'name':u['name'],'ts':now()},1)
+                audit(un,u['role'],'PASSWORD_RESET_REQUESTED','Requested from the sign-in page')
+    evt('RESET_REQUEST',fac[:30],ip,un[:30]);return {'ok':True,'support':cfg('support')}
 def mkuser(h):
     q=parse_qs(urlparse(h.path).query);t=(h.headers.get('Authorization') or '')[7:] or (q.get('t') or [''])[0]
-    r=hone('SELECT code,uid,exp FROM sess WHERE tok=?',(t,)) if t else None
+    t=hashlib.sha256(t.encode()).hexdigest() if t else '';r=hone('SELECT code,uid,exp FROM sess WHERE tok=?',(t,)) if t else None
     if not r or r[2]<time.time(): return None
     code,uid=r[0],r[1]
     if code=='platform': u={'id':uid,'username':uid,'name':'Platform Owner','role':'owner'}
@@ -412,19 +503,21 @@ def sched():
                 CTX.t=tenant(code);st=get('bk','status')
                 if not st or time.time()-calendar.timegm(time.strptime(st['when'],'%Y-%m-%dT%H:%M:%SZ'))>BK_HOURS*3600: backup()
             except Exception as e: print('Backup error',code,e)
+        try: hx('DELETE FROM events WHERE ts<?',(time.time()-30*86400,))
+        except Exception: pass
         time.sleep(300)
 ROUTES={('GET','/api/me'):lambda u,b,q:pub(u),('GET','/api/state'):state,('GET','/api/changes'):changes,('POST','/api/push'):push,
 ('POST','/api/next'):nxt,('POST','/api/users'):users,('POST','/api/password'):pwd,('POST','/api/backup/run'):runbk,
 ('GET','/api/sub'):sub_get,('POST','/api/sub/request'):sub_request,('POST','/api/sub/paystack'):sub_paystack,
-('GET','/api/owner/overview'):o_overview,('POST','/api/owner/tenant'):o_tenant,('POST','/api/owner/record'):o_record,('POST','/api/owner/confirm'):o_confirm,
-('POST','/api/owner/reject'):o_reject,('POST','/api/owner/plans'):o_plans,('POST','/api/owner/cfg'):o_cfg,('POST','/api/owner/resetadmin'):o_resetadmin,('POST','/api/sample/reject'):reject_sample}
-WRITES=('/api/push','/api/next','/api/users','/api/backup/run','/api/sample/reject');OWNER_OK=('/api/me','/api/logout','/api/password')
+('GET','/api/support'):sup_get,('POST','/api/support/ticket'):sup_new,('POST','/api/owner/ticket'):o_ticket,('GET','/api/owner/overview'):o_overview,('GET','/api/owner/monitor'):o_monitor,('POST','/api/owner/tenant'):o_tenant,('POST','/api/owner/record'):o_record,('POST','/api/owner/confirm'):o_confirm,
+('POST','/api/owner/reject'):o_reject,('POST','/api/owner/plans'):o_plans,('POST','/api/owner/cfg'):o_cfg,('POST','/api/owner/resetadmin'):o_resetadmin}
+WRITES=('/api/push','/api/next','/api/users','/api/backup/run');OWNER_OK=('/api/me','/api/logout','/api/password')
 PAGES={'/':'index.html','/index.html':'index.html','/owner':'owner.html'}
 class H(BaseHTTPRequestHandler):
     protocol_version='HTTP/1.1'
     def log_message(s,*a): pass
     def out(s,code,body,ct='application/json',extra=()):
-        b=body if isinstance(body,bytes) else json.dumps(body).encode()
+        meter(code);b=body if isinstance(body,bytes) else json.dumps(body).encode()
         s.send_response(code);s.send_header('Content-Type',ct);s.send_header('Content-Length',str(len(b)));s.send_header('Cache-Control','no-store')
         s.send_header('X-Content-Type-Options','nosniff');s.send_header('Referrer-Policy','no-referrer');s.send_header('Content-Security-Policy',CSP)
         for k,v in extra: s.send_header(k,v)
@@ -435,12 +528,15 @@ class H(BaseHTTPRequestHandler):
         p=urlparse(s.path).path
         try:
             if m=='GET' and p in PAGES: return s.out(200,open(HERE+'/public/'+PAGES[p],'rb').read(),'text/html; charset=utf-8')
+            if m=='GET' and p in ('/privacy','/terms'): return s.out(200,legal_page(p[1:]).encode(),'text/html; charset=utf-8')
             if m=='GET' and p=='/health': return s.out(200,{'ok':True})
             n=int(s.headers.get('Content-Length') or 0)
             if n>8000000: raise Err(413,'Request too large')
             raw=s.rfile.read(n) if m=='POST' else b''
             if p=='/api/paystack/webhook': return s.out(200,paystack_hook(s,raw))
             b=json.loads(raw or b'{}') if m=='POST' else None
+            if p=='/api/config': return s.out(200,public_cfg())
+            if p=='/api/reset-request': return s.out(200,reset_request(s,b))
             if p=='/api/login': return s.out(200,login(s,b))
             if p=='/api/register': return s.out(200,register(s,b))
             u=mkuser(s)
@@ -466,7 +562,7 @@ class H(BaseHTTPRequestHandler):
             s.out(200,fn(u,b,parse_qs(urlparse(s.path).query)))
         except Err as e: s.out(e.code,{'error':e.msg})
         except (BrokenPipeError,ConnectionResetError): pass
-        except Exception as e: print('ERROR',p,repr(e));s.out(500,{'error':'Server error'})
+        except Exception as e: print('ERROR',p,repr(e));evt('SERVER_ERROR','',cip(s),p);s.out(500,{'error':'Something went wrong. Please try again.'})
     def events(s):
         t=CTX.t;s.send_response(200);s.send_header('Content-Type','text/event-stream');s.send_header('Cache-Control','no-cache');s.end_headers()
         q=queue.Queue()

@@ -13,18 +13,25 @@ button{font:inherit;border:0;border-radius:6px;padding:7px 12px;cursor:pointer;b
 th{font-size:13px;color:var(--mut)}.st{display:flex;gap:12px;flex-wrap:wrap}.st div{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 18px;min-width:150px}.st b{font-size:24px;display:block}
 .tag{padding:2px 9px;border-radius:10px;font-size:12px;background:#e6eef0}.tag.active{background:#d8f1e4;color:var(--ok)}.tag.trial{background:#dbeafe;color:#1e40af}.tag.expired,.tag.suspended{background:#fee2e2;color:var(--red)}
 #login{max-width:340px;margin:12vh auto;background:#fff;padding:26px;border-radius:12px;border:1px solid var(--line)}#err{color:var(--red);font-size:13px;display:none}
-.pw{position:relative}.pw input{padding-right:54px}.pw button{position:absolute;right:5px;top:3px;background:transparent;color:var(--mut);padding:5px 9px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px}
 .muted{color:var(--mut);font-size:13px}.row{display:flex;gap:6px;flex-wrap:wrap}
+/* show / hide password */
+.pw-wrap{position:relative;display:block}.pw-wrap input{padding-right:52px!important;width:100%}
+.pw-wrap .pw-eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;min-width:0;min-height:0;padding:0;margin:0;display:flex;align-items:center;justify-content:center;background:transparent;border:0;border-radius:8px;color:#475569;cursor:pointer;line-height:1}
+.pw-wrap .pw-eye:hover{background:transparent;color:#0f172a}.pw-wrap .pw-eye svg{width:22px;height:22px;display:block;pointer-events:none}
+.pw-wrap .pw-eye:focus-visible,input:focus-visible,button:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+input[type=password]::-ms-reveal{display:none!important;width:0;height:0}
+input[type=password]::-ms-clear{display:none!important;width:0;height:0}
+input[type=password]::-webkit-credentials-auto-fill-button{visibility:hidden!important;display:none!important;pointer-events:none;position:absolute;right:0}
+input[type=password]::-webkit-contacts-auto-fill-button{visibility:hidden!important;display:none!important;pointer-events:none;position:absolute;right:0}
 </style></head><body>
 <div id="login"><h2 style="margin-top:0">Platform Owner</h2><div id="err"></div>
-<label>Username</label><input id="u" autocapitalize="none"><label>Password</label><div class="pw"><input id="p" type="password"><button type="button" onclick="togglePw(this)" aria-label="Show password">👁</button></div><p><button onclick="login()" style="width:100%">Sign in</button></p></div>
+<label>Username</label><input id="u" autocapitalize="none"><label>Password</label><input id="p" type="password" autocomplete="current-password" placeholder="Enter your password"><p><button onclick="login()" style="width:100%">Sign in</button></p></div>
 <div id="app" style="display:none">
 <header><h1 id="brand">Platform Owner Console</h1><div class="row"><button class="g" onclick="load()">Refresh</button><button class="g" onclick="chpw()">Change password</button><button class="g" onclick="logout()">Sign out</button></div></header>
 <main id="main"></main></div>
 <script>
-let TOK=sessionStorage.getItem('owner_tok')||'',D=null,timer=null;
-function togglePw(b){const x=document.getElementById('p'),show=x.type==='password';x.type=show?'text':'password';b.textContent=show?'🙈':'👁';b.setAttribute('aria-label',show?'Hide password':'Show password')}
+let TOK=sessionStorage.getItem('owner_tok')||'',D=null,M=null,timer=null;
 const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'₦'+(+n||0).toLocaleString('en-NG',{maximumFractionDigits:2});
 const dt=t=>t?new Date(t*1000).toLocaleString():'—';
@@ -41,35 +48,70 @@ function out(){clearInterval(timer);TOK='';sessionStorage.removeItem('owner_tok'
 async function logout(){try{await api('/logout',{})}catch(_){}out();}
 const login_=document.getElementById('login');
 async function start(){login_.style.display='none';app.style.display='block';await load();clearInterval(timer);timer=setInterval(load,30000);}
-async function load(){try{D=await api('/owner/overview');draw();}catch(x){if(TOK)alert(x.message);}}
+async function load(){try{D=await api('/owner/overview');try{M=await api('/owner/monitor');}catch(_){M=null;}draw();}catch(x){if(TOK)alert(x.message);}}
 async function act(path,body,msg){if(msg&&!confirm(msg))return;try{await api(path,body);await load();}catch(x){alert(x.message);}}
 function draw(){
   brand.textContent=(D.cfg.brand||'Platform')+' – Owner Console';
   const T=D.tenants,pend=D.payments.filter(p=>p.status==='pending');
-  main.innerHTML=`
+  main.innerHTML=(D.demo?'<div style="background:#fff4d6;color:#7a5b00;border-radius:8px;padding:10px 14px;margin-bottom:12px"><b>Demo mode.</b> This server has no permanent storage, so facilities, payments and settings can disappear when it restarts. Do not use it for real facilities yet.</div>':'')+`
   <div class="st"><div><b>${T.length}</b>Facilities</div><div><b>${T.filter(t=>t.status==='active'||t.status==='trial').length}</b>Active or on trial</div><div><b>${T.filter(t=>t.status==='expired').length}</b>Expired</div>
   <div><b>${money(D.revenue.today)}</b>Received today</div><div><b>${money(D.revenue.month)}</b>This month</div><div><b>${money(D.revenue.all)}</b>All time</div></div>
   ${pend.length?`<h2>Payments waiting for your confirmation (${pend.length})</h2><div class="tw"><table><thead><tr><th>Date</th><th>Facility</th><th>Plan</th><th>Amount</th><th>Method</th><th>Reference</th><th>Note</th><th></th></tr></thead><tbody>
   ${pend.map(p=>`<tr><td>${dt(p.created)}</td><td>${e(p.code)}</td><td>${e(p.plan)}</td><td><b>${money(p.amount)}</b></td><td>${e(p.method)}</td><td>${e(p.ref)}</td><td>${e(p.note)}</td>
   <td class="row"><button onclick="act('/owner/confirm',{id:'${p.id}'},'Confirm that ${money(p.amount)} has been received?')">Confirm received</button><button class="d" onclick="act('/owner/reject',{id:'${p.id}'},'Reject this payment request?')">Reject</button></td></tr>`).join('')}</tbody></table></div>`:''}
-  <h2>Facilities</h2><div class="tw"><table><thead><tr><th>Facility</th><th>Status</th><th>Plan</th><th>Expires</th><th>Patients</th><th>Orders</th><th>Users</th><th>Last sign-in</th><th>Backup</th><th></th></tr></thead><tbody>
-  ${T.length?T.map(t=>`<tr><td><b>${e(t.name)}</b><br><span class="muted">Facility code: <b>${e(t.code.toUpperCase())}</b> · ${e(t.phone||t.email||'')}</span><br><button class="g" onclick="copyCode('${e(t.code)}')">Copy facility code</button></td><td><span class="tag ${t.status}">${t.status}</span></td><td>${e(t.plan)}</td><td>${dt(t.until)}</td><td>${t.patients}</td><td>${t.orders}</td><td>${t.users}</td><td>${dt(t.last_login)}</td>
+  ${tkHtml()}
+  <h2>Facilities</h2><input id="fsearch" placeholder="Search by name, facility code, phone or email" oninput="flt(this.value)" style="max-width:420px;margin-bottom:8px"><div class="tw"><table id="ftab"><thead><tr><th>Facility</th><th>Facility code</th><th>Status</th><th>Plan</th><th>Expires</th><th>Patients</th><th>Orders</th><th>Users</th><th>Last sign-in</th><th>Backup</th><th></th></tr></thead><tbody>
+  ${T.length?T.map(t=>`<tr><td><b>${e(t.name)}</b><br><span class="muted">${e(t.phone||t.email||'')}</span></td><td><code style="font-size:15px;font-weight:700">${e(t.code.toUpperCase())}</code><div class="row" style="margin-top:4px"><button class="g" onclick="cc('${t.code}')">Copy</button><button class="g" onclick="cm('${t.code}')">Copy message</button></div></td><td><span class="tag ${t.status}">${t.status}</span></td><td>${e(t.plan)}</td><td>${dt(t.until)}</td><td>${t.patients}</td><td>${t.orders}</td><td>${t.users}</td><td>${dt(t.last_login)}</td>
   <td>${t.backup?(t.backup.ok?'<span class="tag active">OK</span>':'<span class="tag expired">FAILED</span>'):'—'}</td>
   <td class="row"><button onclick="rec('${t.code}')">Record payment</button><button class="g" onclick="ext('${t.code}')">Extend</button>
   ${t.status==='suspended'?`<button class="g" onclick="act('/owner/tenant',{code:'${t.code}',action:'activate'})">Activate</button>`:`<button class="d" onclick="act('/owner/tenant',{code:'${t.code}',action:'suspend'},'Suspend ${e(t.name)}? Nobody there can sign in until you activate it again.')">Suspend</button>`}
-  <button class="g" onclick="rst('${t.code}')">Reset admin password</button></td></tr>`).join(''):'<tr><td colspan="10" style="text-align:center;color:var(--mut)">No facilities have registered yet</td></tr>'}</tbody></table></div>
+  <button class="g" onclick="rst('${t.code}')">Reset admin password</button></td></tr>`).join(''):'<tr><td colspan="11" style="text-align:center;color:var(--mut)">No facilities have registered yet</td></tr>'}</tbody></table></div>
   <p class="muted">You see counts and subscription status only. Patient records stay private to each facility.</p>
   <div class="grid"><div class="card"><h2 style="margin-top:0">Plans and prices</h2><p class="muted">A plan with price 0 cannot be bought yet.</p>
   ${D.plans.map(p=>`<label>${e(p.name)} (${p.days} day${p.days>1?'s':''}) price in ₦</label><input id="pr_${p.id}" type="number" min="0" step="any" value="${p.price}">`).join('')}
   <label>Free trial for new facilities (days, 0 = none)</label><input id="trial" type="number" min="0" value="${e(D.cfg.trial_days)}"><p><button onclick="savePlans()">Save prices and trial</button></p></div>
   <div class="card"><h2 style="margin-top:0">Payment details shown to facilities</h2><label>Bank account for transfers</label><textarea id="bank" rows="4" placeholder="Bank name, account number, account name">${e(D.cfg.bank)}</textarea>
   <label>Help contact (phone / WhatsApp)</label><input id="support" value="${e(D.cfg.support)}"><label>Platform name</label><input id="brandin" value="${e(D.cfg.brand)}">
-  <p><button onclick="saveCfg()">Save details</button></p><p class="muted">Online card payment (Paystack): <b>${D.paystack?'enabled':'not enabled'}</b></p></div></div>
+  <p><button onclick="saveCfg()">Save details</button></p><p class="muted">Online card payment (Paystack): <b>${D.paystack?'enabled':'not enabled'}</b></p></div>
+  <div class="card"><h2 style="margin-top:0">Support contacts shown to facilities</h2><p class="muted">Shown on the sign-in page and on every facility's Help &amp; Support page. Leave a box empty to hide it.</p>
+  <label>WhatsApp number (with country code, e.g. 2348012345678)</label><input id="s_wa" value="${e(D.cfg.support_whatsapp)}"><label>Phone number</label><input id="s_ph" value="${e(D.cfg.support_phone)}">
+  <label>Support email</label><input id="s_em" type="email" value="${e(D.cfg.support_email)}"><label>Support hours</label><input id="s_hr" placeholder="e.g. Mon-Sat, 8am to 6pm" value="${e(D.cfg.support_hours)}">
+  <label>Extra note</label><textarea id="s_tx" rows="2">${e(D.cfg.support)}</textarea><p><button onclick="saveSupport()">Save support details</button></p></div>
+  <div class="card" style="grid-column:1/-1"><h2 style="margin-top:0">Privacy Policy and Terms of Service</h2>
+  <p class="muted">Paste your finished text. Use <code># Heading</code>, <code>## Sub-heading</code>, <code>- bullet</code> and a blank line between paragraphs. When a document has text, links appear on the sign-in page, the registration form (new facilities must tick to accept) and inside the app. Last updated: <b>${e(D.cfg.legal_updated||'not published')}</b></p>
+  <label>Privacy Policy ${D.cfg.privacy?'(<a href="/privacy" target="_blank">view page</a>)':''}</label><textarea id="l_pr" rows="8">${e(D.cfg.privacy)}</textarea>
+  <label>Terms of Service ${D.cfg.terms?'(<a href="/terms" target="_blank">view page</a>)':''}</label><textarea id="l_tm" rows="8">${e(D.cfg.terms)}</textarea>
+  <p><button onclick="saveLegal()">Publish</button> <span class="muted">Emptying a box and publishing removes that document and its links.</span></p></div></div>
   <h2>Payment history</h2><div class="tw"><table><thead><tr><th>Date</th><th>Facility</th><th>Plan</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th><th>By</th></tr></thead><tbody>
-  ${D.payments.map(p=>`<tr><td>${dt(p.created)}</td><td>${e(p.code)}</td><td>${e(p.plan)}</td><td>${money(p.amount)}</td><td>${e(p.method)}</td><td>${e(p.ref)}</td><td>${e(p.status)}</td><td>${e(p.by||'')}</td></tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--mut)">No payments yet</td></tr>'}</tbody></table></div>`;
+  ${D.payments.map(p=>`<tr><td>${dt(p.created)}</td><td>${e(p.code)}</td><td>${e(p.plan)}</td><td>${money(p.amount)}</td><td>${e(p.method)}</td><td>${e(p.ref)}</td><td>${e(p.status)}</td><td>${e(p.by||'')}</td></tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--mut)">No payments yet</td></tr>'}</tbody></table></div>`+monHtml();
 }
+const up=s=>{const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d?d+'d '+h+'h':h?h+'h '+m+'m':m+'m';};
+const BAD=['LOGIN_FAILED','LOCKOUT','SERVER_ERROR','BAD_WEBHOOK_SIGNATURE','SUSPENDED_LOGIN'];
+function monHtml(){
+  if(!M)return '';
+  const c=M.counts24||{};
+  return `<h2>Monitoring (activity only, no patient data)</h2>
+  <div class="st"><div><b>${up(M.uptime)}</b>Server running</div><div><b>${M.requests}</b>Requests, last hour</div><div><b>${M.server_errors}</b>Server errors, last hour</div><div><b>${c.LOGIN_FAILED||0}</b>Failed sign-ins, 24 h</div><div><b>${c.LOCKOUT||0}</b>Lock-outs, 24 h</div><div><b>${M.sessions}</b>People signed in now</div></div>
+  <h3>By facility</h3><div class="tw"><table><thead><tr><th>Facility</th><th>Signed in now</th><th>Failed sign-ins, 24 h</th><th>Last sign-in</th><th>Database size</th></tr></thead><tbody>
+  ${M.facilities.map(f=>`<tr><td>${e(f.name)} <span class="muted">${e(f.code.toUpperCase())}</span></td><td>${f.sessions}</td><td>${f.failed24>=5?`<b style="color:var(--red)">${f.failed24}</b>`:f.failed24}</td><td>${dt(f.last_login)}</td><td>${f.db_kb} KB</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--mut)">No facilities yet</td></tr>'}</tbody></table></div>
+  <h3>Recent security and system events</h3><div class="tw"><table><thead><tr><th>Time</th><th>Event</th><th>Facility</th><th>Address</th><th>Detail</th></tr></thead><tbody>
+  ${M.events.slice(0,60).map(v=>`<tr><td>${dt(v.ts)}</td><td>${BAD.includes(v.kind)?`<b style="color:var(--red)">${e(v.kind)}</b>`:e(v.kind)}</td><td>${e((v.code||'').toUpperCase())}</td><td>${e(v.ip)}</td><td>${e(v.detail)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--mut)">No events yet</td></tr>'}</tbody></table></div>
+  <p class="muted">Addresses are kept for 30 days. Behind a hosting proxy, the address shown is the one the proxy reports. For raw traffic logs use your host's Logs page, and put a service such as Cloudflare in front of the site for attack filtering.</p>`;
+}
+function cc(c){const t=c.toUpperCase();navigator.clipboard?navigator.clipboard.writeText(t).then(()=>alert('Copied: '+t)):prompt('Facility code',t);}
+function cm(c){const f=D.tenants.find(t=>t.code===c);const m='Hello, the facility code for '+f.name+' is '+c.toUpperCase()+'. Your staff sign in at '+location.origin+' using this code, their username and their password.';navigator.clipboard?navigator.clipboard.writeText(m).then(()=>alert('Message copied. Paste it into WhatsApp or email.')):prompt('Copy this message',m);}
+function flt(v){v=v.toLowerCase();document.querySelectorAll('#ftab tbody tr').forEach(r=>{r.style.display=r.textContent.toLowerCase().includes(v)?'':'none';});}
+function tkHtml(){
+  const T=D.tickets||[],open=T.filter(t=>t.status==='open');
+  return `<h2>Support requests${open.length?` <span class="tag expired">${open.length} open</span>`:''}</h2>`+(T.length?`<div class="tw"><table><thead><tr><th>Sent</th><th>Facility</th><th>From</th><th>Request</th><th>Status</th><th>Your reply</th></tr></thead><tbody>
+  ${T.map(t=>`<tr><td>${dt(t.created)}</td><td>${e(t.code.toUpperCase())}</td><td>${e(t.name)}<br><span class="muted">${e(t.role)}</span></td>
+  <td style="white-space:normal;min-width:280px"><b>${e(t.subject)}</b> <span class="muted">(${e(t.cat)})</span><br>${e(t.body)}</td><td><span class="tag ${t.status==='open'?'trial':'active'}">${t.status==='open'?'Open':'Resolved'}</span></td>
+  <td style="white-space:normal;min-width:240px"><textarea id="rp_${t.id}" rows="2" placeholder="Type a reply">${e(t.reply||'')}</textarea><div class="row" style="margin-top:4px"><button onclick="tk('${t.id}','reply_close')">Reply &amp; resolve</button><button class="g" onclick="tk('${t.id}','reply')">Reply</button>${t.status==='open'?`<button class="g" onclick="tk('${t.id}','close')">Resolve</button>`:`<button class="g" onclick="tk('${t.id}','reopen')">Reopen</button>`}</div></td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No support requests yet.</p>');
+}
+function tk(id,a){const r=document.getElementById('rp_'+id);act('/owner/ticket',{id,action:a,reply:r?r.value:''});}
+function saveSupport(){act('/owner/cfg',{support_whatsapp:s_wa.value,support_phone:s_ph.value,support_email:s_em.value,support_hours:s_hr.value,support:s_tx.value}).then(()=>alert('Support details saved.'));}
+function saveLegal(){if(!confirm('Publish these documents? New facilities will have to accept them when they register.'))return;act('/owner/cfg',{privacy:l_pr.value,terms:l_tm.value});}
 function ext(c){const d=prompt('Add how many days of access to '+c+'?','30');if(d)act('/owner/tenant',{code:c,action:'extend',days:d});}
-function copyCode(c){if(!navigator.clipboard||!navigator.clipboard.writeText){alert('Facility code: '+c.toUpperCase());return;}navigator.clipboard.writeText(c.toUpperCase()).then(()=>alert('Facility code copied.')).catch(()=>alert('Facility code: '+c.toUpperCase()));}
 function rec(c){
   const plan=prompt('Which plan did '+c+' pay for? Type: '+D.plans.map(p=>p.id).join(', '),'monthly');if(!plan)return;
   const pl=D.plans.find(p=>p.id===plan);const amt=prompt('Amount received (₦)',pl?pl.price:'');if(!amt)return;
@@ -80,6 +122,15 @@ function rst(c){const un=prompt('Username of the facility admin who lost the pas
 function savePlans(){act('/owner/plans',{plans:D.plans.map(p=>({id:p.id,name:p.name,price:document.getElementById('pr_'+p.id).value}))}).then(()=>act('/owner/cfg',{trial_days:document.getElementById('trial').value}));}
 function saveCfg(){act('/owner/cfg',{bank:bank.value,support:support.value,brand:brandin.value});}
 async function chpw(){const o=prompt('Current password');if(!o)return;const n=prompt('New password (8+ characters)');if(!n)return;try{await api('/password',{old:o,new:n});alert('Password changed.');}catch(x){alert(x.message);}}
+const SVGA='viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const EYE=`<svg ${SVGA}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF=`<svg ${SVGA}><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.5 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a10.4 10.4 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>`;
+document.querySelectorAll('input[type=password]').forEach(inp=>{
+  const w=document.createElement('span');w.className='pw-wrap';inp.parentNode.insertBefore(w,inp);w.appendChild(inp);
+  const b=document.createElement('button');b.type='button';b.className='pw-eye';b.innerHTML=EYE;b.title='Show password';b.setAttribute('aria-label','Show password');
+  b.onclick=()=>{const sh=inp.type==='password';inp.type=sh?'text':'password';b.innerHTML=sh?EYE_OFF:EYE;b.title=sh?'Hide password':'Show password';b.setAttribute('aria-label',b.title);inp.focus();};
+  w.appendChild(b);
+});
 p.addEventListener('keydown',ev=>{if(ev.key==='Enter')login();});
 if(TOK)start().catch(()=>out());
 </script></body></html>
