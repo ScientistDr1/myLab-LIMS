@@ -96,30 +96,15 @@ summary{cursor:pointer;font-weight:600;color:var(--side)}
   @page{margin:0;size:A4}
   html,body{margin:0;padding:0;background:#fff;height:auto}
   nav,main,dialog,#login-screen,#app{display:none!important}
-  #report{
-    display:block!important;
-    padding: 3.8cm 1.8cm 1.5cm 1.8cm;
-    font-family: "Times New Roman", Times, serif;
-    font-size: 11pt;
-    color: #000;
-    line-height: 1.35;
-    min-height: 100vh;
-    box-sizing: border-box;
-    position: relative;
-  }
-  #report.with-lh{
-    padding: 0 0 2.2cm 0;
-    min-height: 100vh;
-    display: flex!important;
-    flex-direction: column;
-  }
-  #report.with-lh .report-body{
-    padding: 0.4cm 1.5cm 0.6cm 1.5cm;
-    flex: 1 1 auto;
-  }
-  #report table{width:100%;border-collapse:collapse;margin:8px 0}
-  #report th,#report td{border-bottom:1px solid #999;padding:5px 8px;text-align:left;font-size:10.5pt}
-  #report th{font-weight:700;background:transparent}
+  #report{display:block!important}
+  .rpage{display:block;padding:3.8cm 1.8cm 1.5cm 1.8cm;font-family:"Times New Roman",Times,serif;font-size:11pt;color:#000;line-height:1.35;min-height:296mm;box-sizing:border-box;position:relative;page-break-after:always;break-after:page}
+  .rpage:last-child{page-break-after:auto;break-after:auto}
+  .rpage.with-lh{padding:0 0 2.2cm 0;display:flex!important;flex-direction:column}
+  .rpage.with-lh .report-body{padding:.4cm 1.5cm .6cm 1.5cm;flex:1 1 auto}
+  .rpage table{width:100%;border-collapse:collapse;margin:8px 0}
+  .rpage th,.rpage td{border-bottom:1px solid #999;padding:5px 8px;text-align:left;font-size:10.5pt}
+  .rpage th{font-weight:700;background:transparent;color:#000}
+  .rpage .rtitle{text-align:center;font-size:12pt;font-weight:700;margin:0 0 12px;letter-spacing:.5px;border-bottom:1.5px solid #333;padding-bottom:6px}
   .H,.L,.A{color:#000!important;font-weight:700}
   .no-print{display:none!important}
   .lh-img{
@@ -191,6 +176,7 @@ input[type=password]::-webkit-contacts-auto-fill-button{visibility:hidden!import
 a.b{display:inline-block;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;background:var(--acc);color:#fff;margin:0 8px 8px 0}
 a.b.g{background:#e2e8f0;color:var(--ink)}a.b:hover{filter:brightness(.95)}
 #login-links{margin-top:12px;text-align:center;font-size:13px;line-height:1.9}#login-links a{color:var(--acc);font-weight:600}
+.tag.Partial{background:#dbeafe;color:#1e40af}
 </style>
 </head>
 <body>
@@ -717,21 +703,63 @@ function ageParts(p){ // {n, u} as entered, or derived from an old date of birth
 }
 function ageText(p){ const a=ageParts(p); return a? a.n+(a.u==='m'?' mths':' yrs') : ''; }
 function ageSex(p){ const a=ageText(p); return a ? `${a} / ${p.sex||''}` : (p?.sex||''); }
-function hasResults(o){ return !!(o.results && Object.values(o.results).some(r=>r && Object.keys(r).some(k=>k!=='_meta'&&k!=='Remark'&&r[k]!==''&&r[k]!=null))); }
-function statusOf(o){
-  if(o.rejected) return 'Rejected';
-  if(o.validated) return 'Completed';
-  return hasResults(o) ? 'Validation' : 'Pending';
+/* ---------- Departments (units) and per-test state ---------- */
+const UNITS=[{id:'haem',name:'Haematology'},{id:'chem',name:'Chemical Pathology'},{id:'sero',name:'Serology & Immunology'},{id:'micro',name:'Microbiology & Parasitology'},{id:'bb',name:'Blood Bank'},{id:'other',name:'Other'}];
+const unitName=id=>(UNITS.find(u=>u.id===id)||{name:id}).name;
+function defaultUnit(name){
+  const n=String(name||'');
+  if(/blood group|cross.?match|coombs/i.test(n)) return 'bb';
+  if(/blood count|fbc|pcv|haemoglobin|\bhb\b|esr|genotype|malaria|reticul|coagul|prothrombin/i.test(n)) return 'haem';
+  if(/hbsag|hcv|rvs|hiv|vdrl|widal|pylori|serum pt|pregnan|toxo|chlam|typhoid|syphil/i.test(n)) return 'sero';
+  if(/culture|m\/c\/s|sensitiv|stool|semen|seminal|sfa|sputum|swab|afb|urine m/i.test(n)) return 'micro';
+  return 'chem';
 }
-const ST_LABEL={Pending:'Pending',Validation:'Awaiting validation',Completed:'Released',Rejected:'Rejected'};
+const unitOf=t=>(t&&t.unit)||defaultUnit(t&&t.name);
+const testById=tid=>db.tests.find(x=>x.id===tid);
+const orderUnits=o=>[...new Set((o.tests||[]).map(testById).filter(Boolean).map(unitOf))];
+function myUnits(){   // departments a technician / scientist is limited to (null = all)
+  if(!session||!['mlt','lab'].includes(session.role)) return null;
+  const u=(db.users||[]).find(x=>x.id===session.id)||session;
+  return (u.units&&u.units.length)?u.units:null;
+}
+const canUnit=unit=>{ if(can('*')) return true; const m=myUnits(); return !m||m.includes(unit); };
+const visTests=o=>(o.tests||[]).filter(tid=>{ const t=testById(tid); return t&&canUnit(unitOf(t)); });
+function suOf(o,unit){   // the sample record of one department (older orders had a single sample for everything)
+  if(o.su&&o.su[unit]) return o.su[unit];
+  if(o.su&&Object.keys(o.su).length) return null;
+  if(o.sample&&o.sample.collected) return {collected:true,type:o.sample.type,nature:o.sample.nature,note:o.sample.note,collectedAt:o.sample.collectedAt,collectedBy:o.sample.collectedBy,accepted:{by:o.sample.collectedBy,name:o.sample.collectedBy,at:o.sample.collectedAt},rejected:o.rejected||null,legacy:true};
+  if(o.rejected) return {collected:false,rejected:o.rejected,legacy:true};
+  return null;
+}
+function migrateOrder(o){   // turns an older single-sample order into the per-department form (used when undoing a rejection or revoking)
+  if(!(o.sample&&o.sample.collected)&&!o.rejected&&!o.validated) return;
+  o.su=o.su||{}; o.vt=o.vt||{};
+  orderUnits(o).forEach(u=>{ if(!o.su[u]){ const s=suOf(Object.assign({},o,{su:undefined}),u); if(s){ const c=JSON.parse(JSON.stringify(s)); delete c.legacy; o.su[u]=c; } } });
+  if(o.validated) (o.tests||[]).forEach(tid=>{ if(hasAnyResult(o,tid)&&!o.vt[tid]) o.vt[tid]=o.validated; });
+  o.sample=null; o.rejected=null; o.validated=null;
+}
+const hasAnyResult=(o,tid)=>{ const r=o.results&&o.results[tid]; return !!(r&&Object.keys(r).some(k=>k!=='_meta'&&k!=='Remark'&&k!=='Height (cm)'&&r[k]!==''&&r[k]!=null)); };
+const vtOf=(o,tid)=>(o.vt&&o.vt[tid])||((o.validated&&hasAnyResult(o,tid))?o.validated:null);
+function hasResults(o){ return (o.tests||[]).some(tid=>hasAnyResult(o,tid)); }
+function testState(o,tid){   // Pending | Validation (results in, awaiting a scientist) | Completed (released) | Rejected (its department rejected the sample)
+  const t=testById(tid); if(!t) return 'Pending';
+  const s=suOf(o,unitOf(t)); if(s&&s.rejected) return 'Rejected';
+  if(vtOf(o,tid)) return 'Completed';
+  return hasAnyResult(o,tid)?'Validation':'Pending';
+}
+function statusOf(o){   // the order's overall state, looking only at the tests this user can see
+  const ts=visTests(o).map(tid=>testState(o,tid)); if(!ts.length) return 'Pending';
+  const live=ts.filter(s=>s!=='Rejected'); if(!live.length) return 'Rejected';
+  if(live.every(s=>s==='Completed')) return 'Completed';
+  if(live.some(s=>s==='Completed')) return 'Partial';
+  return live.some(s=>s==='Validation')?'Validation':'Pending';
+}
+const ST_LABEL={Pending:'Pending',Validation:'Awaiting validation',Partial:'Partly released',Completed:'Released',Rejected:'Rejected'};
 const stLabel=s=>ST_LABEL[s]||s;
 const tatOf=t=>(t&&+t.tat>0)?+t.tat:24;
-function receivedAt(o){ return new Date((o.sample&&o.sample.collected&&o.sample.collectedAt)||o.created||o.date||Date.now()); }
-function isOverdue(o){
-  const s=statusOf(o); if(s==='Completed'||s==='Rejected') return false;
-  const hs=(o.tests||[]).map(tid=>tatOf(db.tests.find(x=>x.id===tid))), h=hs.length?Math.max(...hs):24;
-  return Date.now()-receivedAt(o) > h*3600000;
-}
+const recvAt=(o,unit)=>{ const s=suOf(o,unit); return new Date((s&&s.collected&&s.collectedAt)||o.created||o.date||Date.now()); };
+function isOverdueTest(o,tid){ const st=testState(o,tid); if(st==='Completed'||st==='Rejected') return false; const t=testById(tid); return !!t&&(Date.now()-recvAt(o,unitOf(t)))>tatOf(t)*3600000; }
+const isOverdue=o=>visTests(o).some(tid=>isOverdueTest(o,tid));
 function flag(val, analyte, patient){
   if(analyte.t!=='n'||val===''||val==null) return '';
   if(/^[<>]/.test(String(val))) return ''; // allow free-text inequalities
@@ -781,11 +809,12 @@ async function viewDash(){
   const patients = await getPatients();
   const totalP = patients.length;
   const totalO = db.orders.length;
-  const td = today(), act = db.orders;
-  const patToday = new Set(act.filter(o=>o.date===td).map(o=>o.pid)); patients.forEach(p=>{ if(p.reg===td) patToday.add(p.id); });
-  const samplesToday = act.filter(o=>o.sample&&o.sample.collected&&String(o.sample.collectedAt||'').slice(0,10)===td).length;
-  const pendOrders = act.filter(o=>statusOf(o)==='Pending'), pendTests = pendOrders.reduce((n,o)=>n+(o.tests||[]).length,0);
-  const awaiting = act.filter(o=>statusOf(o)==='Validation').length, overdue = act.filter(isOverdue).length;
+  const td = today(), act = db.orders.filter(o=>!myUnits()||visTests(o).length);
+  const patToday = new Set(act.filter(o=>o.date===td).map(o=>o.pid)); if(!myUnits()) patients.forEach(p=>{ if(p.reg===td) patToday.add(p.id); });
+  const samplesToday = act.filter(o=>orderUnits(o).some(u=>{ if(!canUnit(u)) return false; const x=suOf(o,u); return x&&x.collected&&String(x.collectedAt||'').slice(0,10)===td; })).length;
+  const trows = []; act.forEach(o=>visTests(o).forEach(tid=>trows.push({o,tid,st:testState(o,tid)})));
+  const pendRows = trows.filter(r=>r.st==='Pending'), pendTests = pendRows.length, pendOrdersN = new Set(pendRows.map(r=>r.o.id)).size;
+  const awaiting = trows.filter(r=>r.st==='Validation').length, overdue = trows.filter(r=>isOverdueTest(r.o,r.tid)).length;
   const lastBackup = db.settings.lastBackup ? new Date(db.settings.lastBackup).toLocaleString() : 'Never';
   const daysSince = db.settings.lastBackup ? Math.floor((Date.now()-new Date(db.settings.lastBackup))/86400000) : 999;
   const backupWarn = daysSince >= (db.settings.backupIntervalDays||7);
@@ -796,15 +825,15 @@ async function viewDash(){
     <div class="cards">
       <button class="card-btn" onclick="goDash('today')"><span class="l">👥 Patients today</span><span class="n">${patToday.size}</span><span class="s">Tap to see today's orders</span></button>
       <button class="card-btn" onclick="goDash('samples')"><span class="l">🧪 Samples received</span><span class="n">${samplesToday}</span><span class="s">Collected today</span></button>
-      <button class="card-btn" onclick="goDash('pending')"><span class="l">⏳ Pending tests</span><span class="n">${pendTests}</span><span class="s">${pendOrders.length} order${pendOrders.length===1?'':'s'} in the queue</span></button>
-      <button class="card-btn" onclick="goDash('validation')"><span class="l">📋 Awaiting validation</span><span class="n">${awaiting}</span><span class="s">Results entered, not yet released</span></button>
+      <button class="card-btn" onclick="goDash('pending')"><span class="l">⏳ Pending tests</span><span class="n">${pendTests}</span><span class="s">${pendOrdersN} order${pendOrdersN===1?'':'s'} in the queue</span></button>
+      <button class="card-btn" onclick="goDash('validation')"><span class="l">📋 Awaiting validation</span><span class="n">${awaiting}</span><span class="s">Tests with results, not yet released</span></button>
       <button class="card-btn ${overdue?'warn':''}" onclick="goDash('overdue')"><span class="l">⚠️ Overdue results</span><span class="n">${overdue}</span><span class="s">Past the turnaround time</span></button>
     </div>
     <p class="muted">${totalP} patients · ${totalO} orders · ${act.filter(o=>statusOf(o)==='Completed').length} released · ${act.filter(o=>statusOf(o)==='Rejected').length} rejected</p>
     ${dashExtra()}
     <p class="muted">Last verified backup: ${e(lastBackup)} · Live sync: ${ES&&ES.readyState===1?'ON':'reconnecting'}</p>
     <h3>Recent Orders</h3>
-    ${await orderTable(db.orders.slice().reverse().slice(0,8))}
+    ${await orderTable(act.slice().reverse().slice(0,8))}
   `;
 }
 
@@ -931,6 +960,7 @@ function delPatient(id){
 /* ---------- Orders ---------- */
 async function orderTable(list){
   const patients = await getPatients();
+  list = list.filter(o=>!myUnits()||visTests(o).length);
   return `
     <div class="tw">
       <table>
@@ -943,19 +973,15 @@ async function orderTable(list){
               <tr class="k">
                 <td>${e(o.oid||o.id)}</td>
                 <td>${e(p?.name||'—')}</td>
-                <td>${(o.tests||[]).map(tid=>e(db.tests.find(t=>t.id===tid)?.name||tid)).join(', ')}</td>
+                <td style="white-space:normal;max-width:280px">${visTests(o).map(tid=>e(testById(tid)?.name||tid)).join(', ')}${(o.tests||[]).length>visTests(o).length?` <span class="muted">+${(o.tests||[]).length-visTests(o).length} other dept.</span>`:''}</td>
                 <td>${e(o.date||'')}</td>
-                <td><span class="tag ${st}">${stLabel(st)}</span> ${isOverdue(o)?'<span class="tag Rejected">Overdue</span>':''} ${can('fund.view')?payTag(o):''}${o.rejected?`<div class="muted" style="color:#b91c1c;white-space:normal;max-width:260px">⛔ ${e(o.rejected.reason)} – ${e(o.rejected.remark||'')}</div>`:''}</td>
+                <td><span class="tag ${st}">${stLabel(st)}</span> ${isOverdue(o)?'<span class="tag Rejected">Overdue</span>':''} ${can('fund.view')?payTag(o):''}${rejNotes(o)}</td>
                 <td class="actions">
                   <button class="b g" onclick="viewOrder('${o.id}')">View</button>
-                  ${can('orders.sample')||can('*')?`<button class="b" onclick="sampleDlg('${o.id}')">${o.sample?.collected?'Sample ✓':'Collect sample'}</button>`:''}
-                  ${(can('results.edit')||can('*'))&&st!=='Rejected'?`<button class="b" onclick="enterResults('${o.id}')">${st==='Validation'&&(can('results.validate')||can('*'))?'Review &amp; validate':'Results'}</button>`:''}
-                  ${(can('orders.reject')||can('*'))&&st!=='Completed'&&st!=='Rejected'?`<button class="b d" onclick="rejectDlg('${o.id}')">Reject sample</button>`:''}
-                  ${st==='Rejected'&&(can('results.validate')||can('*'))?`<button class="b g" onclick="undoReject('${o.id}')">Undo rejection</button>`:''}
-                  ${st==='Completed'&&(can('results.print')||can('*')||can('results.view'))?`<button class="b s" onclick="printReport('${o.id}')">Print</button>
-                  <button class="b g" onclick="exportReport('${o.id}','pdf')">PDF</button>
-                  <button class="b g" onclick="exportReport('${o.id}','jpg')">JPG</button>
-                  <button class="b" onclick="sendReport('${o.id}','jpg')">Send</button>`:''}
+                  ${can('orders.create')||can('*')?`<button class="b g" onclick="editOrder('${o.id}')">Edit order</button>`:''}
+                  ${can('orders.sample')||can('orders.reject')||can('*')?`<button class="b" onclick="samplesDlg('${o.id}')">Samples</button>`:''}
+                  ${(can('results.edit')||can('*'))?`<button class="b" onclick="enterResults('${o.id}')">${(can('results.validate')||can('*'))&&visTests(o).some(tid=>testState(o,tid)==='Validation')?'Review &amp; validate':'Results'}</button>`:''}
+                  ${(can('results.print')||can('*')||can('results.view'))&&(o.tests||[]).some(tid=>vtOf(o,tid))?`<button class="b s" onclick="printDlg('${o.id}')">Print / export</button>`:''}
                 </td>
               </tr>`;
           }).join(''):'<tr><td colspan="6" class="empty">No orders</td></tr>'}
@@ -1020,7 +1046,8 @@ async function saveOrder(){
     notes: document.getElementById('on').value.trim(),
     results: {},
     total: tests.reduce((t,id)=>t+(+db.tests.find(x=>x.id===id)?.price||0),0),
-    sample: { collected:false, type:'', nature:'', collectedAt:'', collectedBy:'' },
+    su: {}, vt: {},
+    prices: Object.fromEntries(tests.map(id=>[id,+(db.tests.find(x=>x.id===id)||{}).price||0])),
     created: nowISO(),
     createdBy: session.username
   });
@@ -1035,28 +1062,21 @@ async function viewOrder(id){
   const o = db.orders.find(x=>x.id===id);
   if(!o) return;
   const p = await getPatient(o.pid);
-  const st = statusOf(o);
+  const st = statusOf(o), units = orderUnits(o).filter(canUnit);
+  const rows = units.map(u=>`<tr><td><b>${e(unitName(u))}</b></td><td style="white-space:normal">${(o.tests||[]).filter(tid=>testById(tid)&&unitOf(testById(tid))===u).map(tid=>{ const x=testState(o,tid); return `${e(testById(tid).name)} <span class="tag ${x}">${stLabel(x)}</span>`; }).join('<br>')}</td><td style="white-space:normal;min-width:200px">${sampleStateHtml(o,u)}</td></tr>`).join('');
   openDlg(`
     <h3>Order ${e(o.oid)}</h3>
     <p><b>Patient:</b> ${e(p?.name||'—')} (${e(ageSex(p))})<br>
-       <b>Date:</b> ${e(o.date)} &nbsp; <span class="tag ${st}">${stLabel(st)}</span><br>
+       <b>Date:</b> ${e(o.date)} &nbsp; <span class="tag ${st}">${stLabel(st)}</span> ${can('fund.view')?payTag(o):''}<br>
        <span class="muted">Created by ${e(o.createdBy||'—')}</span></p>
-    ${o.rejected?`<div class="alert warn"><b>Sample rejected:</b> ${e(o.rejected.reason)}<br>${e(o.rejected.remark||'')}<br><span class="muted">${e(o.rejected.name||o.rejected.by)} · ${new Date(o.rejected.at).toLocaleString()}</span></div>`:''}
-    ${o.validated?`<p class="muted">Validated &amp; released by <b>${e(o.validated.name)}</b> · ${new Date(o.validated.at).toLocaleString()}</p>`:''}
     ${o.notes?`<p class="muted">${e(o.notes)}</p>`:''}
-    ${o.sample?.collected?`<p><b>Sample:</b> ${e(o.sample.type)} · ${e(o.sample.nature)}
-      <span class="muted">(${e(o.sample.collectedBy||'')} ${e(o.sample.collectedAt?new Date(o.sample.collectedAt).toLocaleString():'')})</span></p>`:
-      `<p class="muted">Sample not yet collected</p>`}
-    <h4>Requested Tests</h4>
-    <ul>${(o.tests||[]).map(tid=>`<li>${e(db.tests.find(t=>t.id===tid)?.name||tid)}</li>`).join('')}</ul>
-    <div class="bar">
-      ${can('orders.sample')||can('*')?`<button class="b" onclick="closeDlg();sampleDlg('${o.id}')">Sample collection</button>`:''}
-      ${(can('results.edit')||can('*'))&&st!=='Rejected'?`<button class="b" onclick="closeDlg();enterResults('${o.id}')">${st==='Validation'&&(can('results.validate')||can('*'))?'Review &amp; validate':'Enter / Edit Results'}</button>`:''}
-      ${(can('orders.reject')||can('*'))&&st!=='Completed'&&st!=='Rejected'?`<button class="b d" onclick="closeDlg();rejectDlg('${o.id}')">Reject sample</button>`:''}
-      ${st==='Completed'&&(can('results.print')||can('*')||can('results.view'))?`<button class="b s" onclick="closeDlg();printReport('${o.id}')">Print</button>
-      <button class="b g" onclick="closeDlg();exportReport('${o.id}','pdf')">Save PDF</button>
-      <button class="b g" onclick="closeDlg();exportReport('${o.id}','jpg')">Save JPG</button>
-      <button class="b" onclick="closeDlg();sendReport('${o.id}','jpg')">Send</button>`:''}
+    <h4>Tests and samples, by department</h4>
+    <div class="tw"><table><thead><tr><th>Department</th><th>Tests</th><th>Sample</th></tr></thead><tbody>${rows||'<tr><td colspan="3" class="empty">No tests for your department</td></tr>'}</tbody></table></div>
+    <div class="bar" style="margin-top:12px;flex-wrap:wrap">
+      ${can('orders.create')||can('*')?`<button class="b g" onclick="closeDlg();editOrder('${o.id}')">Edit order</button>`:''}
+      ${can('orders.sample')||can('orders.reject')||can('*')?`<button class="b" onclick="closeDlg();samplesDlg('${o.id}')">Samples</button>`:''}
+      ${can('results.edit')||can('*')?`<button class="b" onclick="closeDlg();enterResults('${o.id}')">Enter / Edit Results</button>`:''}
+      ${(can('results.print')||can('*')||can('results.view'))&&(o.tests||[]).some(tid=>vtOf(o,tid))?`<button class="b s" onclick="closeDlg();printDlg('${o.id}')">Print / export</button>`:''}
       <button class="b g" data-close>Close</button>
       ${can('*')?`<button class="b d" onclick="delOrder('${o.id}')">Delete</button>`:''}
     </div>
@@ -1077,63 +1097,111 @@ function delOrder(id){
 /* ---------- Results ---------- */
 async function viewResults(){
   if(!can('results.edit')&&!can('*')) return '<p class="empty">Access denied</p>';
-  const pending = filterOrders(db.orders.filter(o=>!['Completed','Rejected'].includes(statusOf(o))).reverse());
+  const pending = filterOrders(db.orders.filter(o=>visTests(o).some(tid=>!['Completed','Rejected'].includes(testState(o,tid)))).reverse());
   return `
     <h2>Results Entry</h2>
-    <p class="muted">Orders that still need results or validation</p>
+    <p class="muted">Orders with tests that still need a sample accepted, results entered, or validation${myUnits()?` · your department(s): ${myUnits().map(unitName).join(', ')}`:''}</p>
     ${filterBar()}${await orderTable(pending)}
   `;
 }
 
 
-/* ---------- Sample collection (Phlebotomist) ---------- */
-const SAMPLE_TYPES = ['Venous blood','Capillary blood','Arterial blood','Urine','Stool','Sputum','HVS','Wound swab','CSF','Semen','Aspirate','Other'];
-const SAMPLE_NATURES = ['Satisfactory','Clotted','Haemolysed','Insufficient','Lipaemic','Icteric','Contaminated','Delayed','Other'];
-
+/* ---------- Samples, by department ---------- */
+const SAMPLE_TYPES=['Whole blood (EDTA)','Whole blood (other)','Serum','Plasma','Venous blood','Capillary blood','Urine','Stool','Sputum','HVS','Wound swab','CSF','Semen','Aspirate','Other'];
+const SAMPLE_NATURES=['Satisfactory','Haemolysed','Lipaemic','Icteric','Clotted','Insufficient volume','Contaminated','Other'];
+const SUGGEST_TYPE={haem:'Whole blood (EDTA)',chem:'Serum',sero:'Serum',micro:'',bb:'Whole blood (EDTA)',other:''};
+const REJECT_REASONS=['Haemolysed specimen','Insufficient volume','Insufficient / incorrect patient data','Incorrect container or anticoagulant','Clotted specimen','Contaminated or leaking container','Unlabelled or mislabelled specimen','Delayed delivery / unstable sample','Other'];
+const NOT_RELEASED=o=>'This test has not been validated and released by a Medical Laboratory Scientist yet.';
+const dtime=v=>v?new Date(v).toLocaleString():'';
+function sampleStateHtml(o,u){
+  const s=suOf(o,u);
+  if(!s||(!s.collected&&!s.rejected)) return '<span class="muted">Not collected yet</span>';
+  if(s.rejected) return `<span style="color:#b91c1c">⛔ Rejected: ${e(s.rejected.reason)}${s.rejected.remark?' – '+e(s.rejected.remark):''}</span><div class="muted">${e(s.rejected.name||s.rejected.by||'')} · ${e(dtime(s.rejected.at))}</div>`;
+  const base=`${e(s.type||'')}${s.nature?' · '+e(s.nature):''}`;
+  if(s.accepted) return `✓ Accepted · ${base}<div class="muted">by ${e(s.accepted.name||s.accepted.by||'')} · ${e(dtime(s.accepted.at))}</div>`;
+  return `Collected · ${base}<div class="muted">Waiting for the ${e(unitName(u))} team to accept it</div>`;
+}
+const rejNotes=o=>orderUnits(o).map(u=>{ const s=suOf(o,u); return (s&&s.rejected&&canUnit(u))?`<div class="muted" style="color:#b91c1c;white-space:normal;max-width:260px">⛔ ${e(unitName(u))}: ${e(s.rejected.reason)}${s.rejected.remark?' – '+e(s.rejected.remark):''}</div>`:''; }).join('');
 function sampleDlg(id){
   if(!can('orders.sample')&&!can('*')) return alert('Access denied');
-  const o = db.orders.find(x=>x.id===id); if(!o) return;
-  o.sample = o.sample || { collected:false, type:'', nature:'', collectedAt:'', collectedBy:'' };
-  const s = o.sample;
-  openDlg(`<h3>Sample collection – ${e(o.oid)}</h3>
-  <p class="muted">Record collection for this order. Sample type and nature are required when marking as collected.</p>
-  <div class="f">
-    <div class="full"><label><input type="checkbox" id="sc_yes" ${s.collected?'checked':''}> Sample collected</label></div>
-    <div><label>Sample type *</label>
-      <select id="sc_type"><option value="">—</option>${SAMPLE_TYPES.map(x=>`<option value="${e(x)}" ${s.type===x?'selected':''}>${e(x)}</option>`).join('')}</select>
-    </div>
-    <div><label>Nature / condition *</label>
-      <select id="sc_nat"><option value="">—</option>${SAMPLE_NATURES.map(x=>`<option value="${e(x)}" ${s.nature===x?'selected':''}>${e(x)}</option>`).join('')}</select>
-    </div>
-    <div class="full"><label>Notes</label><input id="sc_note" value="${e(s.note||'')}" placeholder="Optional"></div>
-  </div>
-  ${s.collected?`<p class="muted">Previously collected ${e(s.collectedAt||'')} by ${e(s.collectedBy||'')}</p>`:''}
-  <div class="bar" style="margin-top:18px">
-    <button class="b" onclick="saveSample('${id}')">Save</button>
-    <button class="b g" data-close>Cancel</button>
-  </div>`);
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const units=orderUnits(o); if(!units.length) return alert('This order has no tests.');
+  const rows=units.map(u=>{
+    const s=suOf(o,u)||{}, locked=!!(s.accepted||s.rejected);
+    const names=(o.tests||[]).filter(tid=>unitOf(testById(tid))===u).map(tid=>e(testById(tid).name)).join(', ');
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0">
+      <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="sc_y_${u}" ${s.collected?'checked':''} ${locked?'disabled':''} style="width:auto;min-height:0"> ${e(unitName(u))} – sample collected</label>
+      <div class="muted" style="margin:2px 0 6px">For: ${names}</div>
+      ${locked?`<div class="muted">${s.rejected?'Rejected by the department. A scientist must undo the rejection before it can be recollected.':'Already accepted by the department.'}</div>`:''}
+      <div class="f"><div><label>Sample type</label><select id="sc_t_${u}" ${locked?'disabled':''}><option value=""></option>${SAMPLE_TYPES.map(x=>`<option ${(s.type||SUGGEST_TYPE[u])===x?'selected':''}>${e(x)}</option>`).join('')}</select></div>
+      <div><label>Nature</label><select id="sc_n_${u}" ${locked?'disabled':''}><option value=""></option>${SAMPLE_NATURES.map(x=>`<option ${(s.nature||'')===x?'selected':''}>${e(x)}</option>`).join('')}</select></div>
+      <div class="full"><label>Note</label><input id="sc_o_${u}" value="${e(s.note||'')}" ${locked?'disabled':''}></div></div></div>`;
+  }).join('');
+  openDlg(`<h3>Sample collection – ${e(o.oid)}</h3><p class="muted">Tick each department whose sample you have collected. That department's own staff then accept or reject it. If one tube serves several departments, record it for each.</p>${rows}
+    <div class="bar"><button class="b" onclick="saveSample('${o.id}')">Save</button><button class="b g" onclick="document.querySelectorAll('#dlg input[id^=sc_y_]:not(:disabled)').forEach(c=>c.checked=true)">Tick all</button><button class="b g" data-close>Cancel</button></div>`);
 }
-
 function saveSample(id){
   if(!can('orders.sample')&&!can('*')) return alert('Access denied');
-  const o = db.orders.find(x=>x.id===id); if(!o) return;
-  const collected = document.getElementById('sc_yes').checked;
-  const type = document.getElementById('sc_type').value;
-  const nature = document.getElementById('sc_nat').value;
-  const note = document.getElementById('sc_note').value.trim();
-  if(collected && (!type || !nature)) return alert('Select sample type and nature');
-  o.sample = {
-    collected,
-    type: collected?type:'',
-    nature: collected?nature:'',
-    note,
-    collectedAt: collected ? (o.sample?.collectedAt || nowISO()) : '',
-    collectedBy: collected ? (o.sample?.collectedBy || session.username) : ''
-  };
-  if(collected && !o.sample.collectedAt) o.sample.collectedAt = nowISO();
-  if(collected) o.sample.collectedBy = o.sample.collectedBy || session.username;
-  log('SAMPLE_COLLECT', `${o.oid} ${collected?'collected':'cleared'} ${type} ${nature}`);
-  persist(); closeDlg(); render();
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const units=orderUnits(o), done=[], next=Object.assign({},o.su||{});
+  for(const u of units){
+    const s=suOf(o,u)||{}; if(s.accepted||s.rejected) continue;
+    const y=document.getElementById('sc_y_'+u).checked, t=document.getElementById('sc_t_'+u).value, n=document.getElementById('sc_n_'+u).value, note=document.getElementById('sc_o_'+u).value.trim();
+    if(y&&(!t||!n)) return alert('Select the sample type and nature for '+unitName(u)+'.');
+    const prev=next[u];
+    if(y){ next[u]=Object.assign({},prev||{},{collected:true,type:t,nature:n,note,collectedAt:(prev&&prev.collectedAt)||nowISO(),collectedBy:(prev&&prev.collectedBy)||session.username}); done.push(unitName(u)); }
+    else if(prev&&prev.collected) next[u]=Object.assign({},prev,{collected:false});
+  }
+  o.su=next; log('SAMPLE_COLLECT',`Order ${o.oid}: ${done.join(', ')||'no change'}`); persist(); closeDlg(); render();
+}
+function samplesDlg(id){
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const units=orderUnits(o).filter(canUnit), act=(can('orders.reject')||can('*'));
+  const rows=units.map(u=>{
+    const s=suOf(o,u), names=(o.tests||[]).filter(tid=>unitOf(testById(tid))===u).map(tid=>e(testById(tid).name)).join(', ');
+    let b='';
+    if((!s||!s.collected)&&!(s&&s.rejected)&&(can('orders.sample')||can('*'))) b+=`<button class="b" onclick="closeDlg();sampleDlg('${o.id}')">Record collection</button>`;
+    if(s&&s.collected&&!s.accepted&&!s.rejected&&act) b+=`<button class="b" onclick="acceptSample('${o.id}','${u}')">Accept</button> <button class="b d" onclick="rejectDlg('${o.id}','${u}')">Reject</button>`;
+    if(s&&s.accepted&&!s.rejected&&act&&!(o.tests||[]).some(tid=>unitOf(testById(tid))===u&&vtOf(o,tid))) b+=`<button class="b d" onclick="rejectDlg('${o.id}','${u}')">Reject</button>`;
+    if(s&&s.rejected&&(can('results.validate')||can('*'))) b+=`<button class="b g" onclick="undoReject('${o.id}','${u}')">Undo rejection</button>`;
+    return `<tr><td><b>${e(unitName(u))}</b></td><td style="white-space:normal;max-width:220px">${names}</td><td style="white-space:normal;min-width:200px">${sampleStateHtml(o,u)}</td><td class="actions">${b}</td></tr>`;
+  }).join('');
+  openDlg(`<h3>Samples by department – ${e(o.oid)}</h3><p class="muted">Each department accepts or rejects its own sample. A rejection affects only that department's tests.</p>
+    <div class="tw"><table><thead><tr><th>Department</th><th>Tests</th><th>Sample</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="empty">No tests for your department on this order</td></tr>'}</tbody></table></div>
+    <div class="bar" style="margin-top:12px"><button class="b g" data-close>Close</button></div>`);
+}
+function acceptSample(id,unit,back){
+  if((!can('orders.reject')&&!can('*'))||!canUnit(unit)) return alert('Only the department\'s own staff can accept this sample.');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  o.su=Object.assign({},o.su||{},{[unit]:Object.assign({},suOf(o,unit)||{},{accepted:{by:session.username,name:session.name||session.username,at:nowISO()}})});
+  log('SAMPLE_ACCEPT',`Order ${o.oid}: ${unitName(unit)}`); persist(); render();
+  if(back) enterResults(id); else samplesDlg(id);
+}
+function rejectDlg(id,unit){
+  if((!can('orders.reject')&&!can('*'))||!canUnit(unit)) return alert('Only the department\'s own staff can reject this sample.');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  openDlg(`<h3>Reject ${e(unitName(unit))} sample – ${e(o.oid)}</h3><p class="muted">Only the ${e(unitName(unit))} tests are affected. The reason is required and is shown on the order.</p>
+    <div class="f"><div class="full"><label>Reason *</label><select id="rj_r"><option value="">Select a reason…</option>${REJECT_REASONS.map(r=>`<option>${e(r)}</option>`).join('')}</select></div>
+    <div class="full"><label>Remark * (what exactly was wrong)</label><textarea id="rj_t" rows="3"></textarea></div></div>
+    <div class="fe" id="rj_e" role="alert"></div>
+    <div class="bar" style="margin-top:14px"><button class="b d" onclick="saveReject('${id}','${unit}')">Reject sample</button><button class="b g" data-close>Cancel</button></div>`);
+}
+function saveReject(id,unit){
+  if((!can('orders.reject')&&!can('*'))||!canUnit(unit)) return alert('Access denied');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const r=document.getElementById('rj_r').value, t=document.getElementById('rj_t').value.trim(), er=document.getElementById('rj_e');
+  if(!r){ er.textContent='Select a reason for the rejection.'; return; }
+  if(t.length<5){ er.textContent='Write a remark of at least a few words explaining the rejection.'; return; }
+  o.su=Object.assign({},o.su||{},{[unit]:Object.assign({},suOf(o,unit)||{},{accepted:null,rejected:{reason:r,remark:t,by:session.username,name:session.name||session.username,at:nowISO()}})});
+  o.updated=nowISO(); o.updatedBy=session.username;
+  log('SAMPLE_REJECT',`Order ${o.oid} ${unitName(unit)}: ${r} – ${t}`.slice(0,300)); persist(); closeDlg(); render();
+}
+function undoReject(id,unit){
+  if(!can('results.validate')&&!can('*')) return alert('Only a Medical Laboratory Scientist can undo a rejection.');
+  const o=db.orders.find(x=>x.id===id); if(!o||!confirm('Undo the rejection of the '+unitName(unit)+' sample?')) return;
+  migrateOrder(o);
+  o.su=Object.assign({},o.su||{},{[unit]:Object.assign({},suOf(o,unit)||{},{rejected:null})});
+  log('SAMPLE_REJECT_UNDO',`Order ${o.oid}: ${unitName(unit)}`); persist(); render(); samplesDlg(id);
 }
 
 async function enterResults(id){
@@ -1141,18 +1209,27 @@ async function enterResults(id){
   const o = db.orders.find(x=>x.id===id);
   if(!o) return;
   const p = await getPatient(o.pid);
-  if(o.rejected) return alert('This sample was rejected ('+o.rejected.reason+'). Undo the rejection first if it should be tested.');
   o.results = o.results||{};
   window._resultPatientAge = ageYears(p);
   window._resultPatientFemale = ((p?.sex||'').toUpperCase().startsWith('F'));
 
   let html = `<h3>Results – ${e(o.oid)} / ${e(p?.name||'')}</h3>
-    <p class="muted">Calculated fields (MCV, MCH, MCHC, RDW-CV/RDW-SD, BUN, ratio, eGFR) fill automatically. Remarks are written manually by a Medical Laboratory Scientist.${o.validated?' <b>These results are validated and locked.</b>':''}</p>`;
+    <p class="muted">Calculated fields (MCV, MCH, MCHC, RDW-CV/RDW-SD, BUN, ratio, eGFR) fill automatically. Remarks are written manually by a Medical Laboratory Scientist.</p>`;
+  const canVal = can('results.validate')||can('*');
+  let shown = 0;
   (o.tests||[]).forEach(tid=>{
     const t = db.tests.find(x=>x.id===tid);
     if(!t) return;
+    const unit = unitOf(t); if(!canUnit(unit)) return;
+    shown++;
     o.results[tid] = o.results[tid]||{};
-    html += `<details open data-tid="${tid}"><summary>${e(t.name)}</summary><div class="f">`;
+    const st = testState(o,tid), chip = `<span class="tag ${st}">${stLabel(st)}</span>`, su = suOf(o,unit);
+    const gate = (su&&su.rejected) ? `<div class="alert warn">Sample rejected (${e(su.rejected.reason)}${su.rejected.remark?' – '+e(su.rejected.remark):''}). Results cannot be entered for this test.</div>`
+      : !(su&&su.collected) ? `<div class="alert info">The ${e(unitName(unit))} sample has not been collected yet. ${(can('orders.sample')||can('*'))?`<button type="button" class="b" onclick="closeDlg();sampleDlg('${o.id}')">Record collection</button>`:''}</div>`
+      : !su.accepted ? `<div class="alert info">The ${e(unitName(unit))} sample is waiting to be accepted by its department. ${((can('orders.reject')||can('*'))&&canUnit(unit))?`<button type="button" class="b" onclick="acceptSample('${o.id}','${unit}',true)">Accept sample</button> <button type="button" class="b d" onclick="rejectDlg('${o.id}','${unit}')">Reject sample</button>`:''}</div>` : '';
+    if(gate){ html += `<details open><summary>${e(t.name)} · ${e(unitName(unit))} ${chip}</summary>${gate}</details>`; return; }
+    const rel = vtOf(o,tid);
+    html += `<details open data-tid="${tid}"><summary>${e(t.name)} · ${e(unitName(unit))} ${chip}${canVal&&st==='Validation'?` <button type="button" class="b s" style="margin-left:8px" onclick="event.preventDefault();validateTests('${o.id}',['${tid}'])">Validate this test</button>`:''}${canVal&&rel?` <button type="button" class="b d" style="margin-left:8px" onclick="event.preventDefault();revokeTest('${o.id}','${tid}')">Revoke</button>`:''}</summary>${rel?`<div class="muted" style="margin:6px 0">Released by <b>${e(rel.name)}</b> · ${e(dtime(rel.at))} (locked)</div>`:''}<div class="f">`;
     if(/renal/i.test(t.name)) html += `<div class="full"><button type="button" class="b g" onclick="recalcRenal('${tid}')">Recalculate BUN, BUN:Creatinine ratio &amp; eGFR</button> <span class="muted">uses Urea, Creatinine and the patient's age and sex</span></div>`;
     if(/renal/i.test(t.name)){
       if(window._resultPatientAge<18) html += `<div><label>Height (cm) – children, for eGFR</label><input type="number" step="any" data-tid="${tid}" data-an="Height (cm)" value="${e(o.results[tid]['Height (cm)']??'')}" oninput="onResultInput(this,'${tid}')"></div>`;
@@ -1189,17 +1266,15 @@ async function enterResults(id){
     }
     html += `</div></details>`;
   });
-  const canVal = can('results.validate')||can('*'), locked = !!o.validated;
+  if(!shown) html += `<p class="empty">None of the tests on this order belong to your department.</p>`;
   html += `
     <div class="bar" style="margin-top:16px">
-      ${locked?`<span class="tag Completed">Released – validated by ${e(o.validated.name)}</span>${canVal?` <button class="b d" onclick="revokeValidation('${o.id}')">Revoke validation</button>`:''}`
-        :`<button class="b" onclick="saveResults('${o.id}')">Save Results</button>${canVal?` <button class="b s" onclick="validateOrder('${o.id}')">Validate &amp; Release Result</button>`:' <span class="muted">A Medical Laboratory Scientist reviews, writes remarks and releases the report.</span>'}`}
+      <button class="b" onclick="saveResults('${o.id}')">Save Results</button>${canVal?` <button class="b s" onclick="validateReady('${o.id}')">Validate all ready tests</button>`:' <span class="muted">A Medical Laboratory Scientist reviews, writes remarks and releases each test.</span>'}
       <button class="b g" data-close>Close</button>
     </div>`;
   openDlg(html);
   (o.tests||[]).forEach(tid=>autoCalcResults(tid));
-  document.querySelectorAll('#dlg textarea[data-an="Remark"]').forEach(el=>{ el.disabled = locked || !canVal; });
-  if(locked) document.querySelectorAll('#dlg [data-tid]').forEach(el=>{ el.disabled = true; });
+  (o.tests||[]).forEach(tid=>{ const locked = !!vtOf(o,tid); document.querySelectorAll(`#dlg [data-tid="${tid}"][data-an]`).forEach(el=>{ if(locked || (el.dataset.an==='Remark' && !canVal)) el.disabled = true; }); });
 }
 
 /** Button: force BUN, BUN:Creatinine ratio and eGFR to be recalculated from Urea / Creatinine */
@@ -1375,40 +1450,44 @@ function markRemarkManual(el){
   el.dataset.manual = '1';
 }
 
-function saveResults(id){
-  if(!can('results.edit')&&!can('*')) return alert('Access denied');
-  const o = db.orders.find(x=>x.id===id);
-  if(!o) return;
-  if(o.validated) return alert('Validated results are locked. A Medical Laboratory Scientist must revoke the validation before they can be edited.');
-  o.results = o.results||{};
-  const touched = new Set();
-  document.querySelectorAll('#dlg [data-tid]').forEach(el=>{
-    const tid = el.dataset.tid;
-    const an = el.dataset.an;
-    if(!an) return;
-    o.results[tid] = o.results[tid]||{};
-    o.results[tid][an] = el.value;
-    if(el.value!=='' && el.value!=null) touched.add(tid);
+function collectResults(o){   // copies the typed values into the order; released tests are locked and skipped
+  o.results=o.results||{};
+  const strip=r=>JSON.stringify(Object.fromEntries(Object.entries(r||{}).filter(([k])=>k!=='_meta'))), before={}, touched=new Set();
+  (o.tests||[]).forEach(tid=>{ before[tid]=strip(o.results[tid]); });
+  document.querySelectorAll('#dlg [data-tid][data-an]').forEach(el=>{
+    const tid=el.dataset.tid, an=el.dataset.an; if(vtOf(o,tid)) return;
+    o.results[tid]=o.results[tid]||{}; o.results[tid][an]=el.value; touched.add(tid);
   });
   touched.forEach(tid=>{
-    const res = o.results[tid];
-    const hasVal = Object.keys(res).some(k=>k!=='_meta' && res[k]!=='' && res[k]!=null);
-    if(!hasVal) return;
-    res._meta = {
-      by: session.username,
-      name: session.name || session.username,
-      initials: session.initials || '',
-      signature: session.signature || '',
-      role: session.role,
-      at: nowISO()
-    };
+    const res=o.results[tid], has=Object.keys(res).some(k=>k!=='_meta'&&res[k]!==''&&res[k]!=null);
+    if(has&&strip(res)!==before[tid]) res._meta={by:session.username,name:session.name||session.username,initials:session.initials||'',signature:session.signature||'',role:session.role,at:nowISO()};
   });
-  o.updated = nowISO();
-  o.updatedBy = session.username;
-  log('RESULTS_SAVE', `Saved results for order ${o.oid} by ${session.username}`);
-  persist();
-  closeDlg();
-  render();
+  o.updated=nowISO(); o.updatedBy=session.username;
+}
+function saveResults(id){
+  if(!can('results.edit')&&!can('*')) return alert('Access denied');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  collectResults(o); log('RESULTS_SAVE',`Results saved for order ${o.oid}`); persist(); closeDlg(); render();
+}
+function validateReady(id){ const o=db.orders.find(x=>x.id===id); if(o) validateTests(id,visTests(o)); }
+function validateTests(id,tids){
+  if(!can('results.validate')&&!can('*')) return alert('Only a Medical Laboratory Scientist can validate results.');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  collectResults(o);
+  const ok=(tids||[]).filter(tid=>canUnit(unitOf(testById(tid)))&&testState(o,tid)==='Validation');
+  if(!ok.length){ persist(); return alert('Nothing is ready to validate. Enter results first, and make sure the department has accepted the sample.'); }
+  const names=ok.map(tid=>testById(tid).name).join(', ');
+  if(!confirm('Validate and release: '+names+'?\n\nYour name and signature go on these results and they are locked. Other tests on this order are not affected.')){ persist(); return; }
+  o.vt=Object.assign({},o.vt||{});
+  ok.forEach(tid=>{ o.vt[tid]={by:session.username,name:session.name||session.username,initials:session.initials||'',signature:session.signature||'',at:nowISO()}; });
+  log('RESULT_VALIDATE',`Order ${o.oid}: ${names}`.slice(0,300)); persist(); closeDlg(); render();
+}
+function revokeTest(id,tid){
+  if(!can('results.validate')&&!can('*')) return alert('Only a Medical Laboratory Scientist can revoke validation.');
+  const o=db.orders.find(x=>x.id===id); if(!o||!canUnit(unitOf(testById(tid)))) return;
+  if(!confirm('Revoke the release of '+testById(tid).name+'? Its results unlock for editing and it will need validating again.')) return;
+  migrateOrder(o); o.vt=Object.assign({},o.vt||{}); delete o.vt[tid];
+  log('RESULT_REVOKE',`Order ${o.oid}: ${testById(tid).name}`); persist(); closeDlg(); render();
 }
 
 /* ---------- Print / Export (letterhead, PDF, JPG, per-scientist sign) ---------- */
@@ -1423,216 +1502,123 @@ function safeFileName(name){
 }
 
 function buildReportHtml(o, p, opts={}){
-  if(!o.validated) return null;
   const useLh = !!(db.letterhead && db.printMode !== 'blank');
-  const readyTests = (o.tests||[]).map(tid=>{
-    const t = db.tests.find(x=>x.id===tid);
-    if(!t) return null;
-    const res = (o.results&&o.results[tid])||{};
-    if(!testHasResults(res, t)) return null;
-    return {tid, t, res, meta: res._meta||null};
-  }).filter(Boolean);
-
-  if(!readyTests.length) return null;
-
-  // Group by scientist (same signatory merge)
-  const groups = [];
-  const map = new Map();
-  readyTests.forEach(item=>{
-    const key = item.meta?.by || '_unknown';
-    if(!map.has(key)){
-      const g = {key, meta: item.meta, items:[]};
-      map.set(key, g);
-      groups.push(g);
-    }
-    map.get(key).items.push(item);
-  });
-
-
-  let body = '';
-  if(useLh && db.letterhead) body += `<img class="lh-img" src="${db.letterhead}" alt="Letterhead">`;
-  body += `<div class="report-body">`;
-  body += `<div style="text-align:center;font-size:12pt;font-weight:700;margin:0 0 12px;letter-spacing:0.5px;border-bottom:1.5px solid #333;padding-bottom:6px">LABORATORY INVESTIGATION REPORT</div>`;
-  body += `<div class="report-meta">
-      <div><b>Patient:</b> ${e(p?.name||'—')}</div>
-      <div><b>Order No:</b> ${e(o.oid)}</div>
-      <div><b>Sex / Age:</b> ${e(ageSex(p))}</div>
-      <div><b>Date:</b> ${e(o.date)}</div>
-      <div><b>Patient ID:</b> ${e(p?.pid||'')}</div>
-      <div><b>Status:</b> Validated &amp; released</div>
-    </div>`;
-
-  let sigHtml = '';
-  groups.forEach(g=>{
-    g.items.forEach(({t, res})=>{
-      body += `<h4 style="margin:14px 0 4px;font-size:11pt;border-bottom:1px solid #666;padding-bottom:2px">${e(t.name)}</h4>
+  const chosen = (opts.tids||o.tests||[]).filter(tid=>{ const t=testById(tid); return t&&vtOf(o,tid)&&testHasResults((o.results&&o.results[tid])||{},t); });
+  if(!chosen.length) return null;
+  const layout = opts.layout||'dept';
+  let pages = [];
+  if(layout==='test') pages = chosen.map(tid=>({title:testById(tid).name,unit:unitOf(testById(tid)),tids:[tid]}));
+  else if(layout==='all') pages = [{title:'All tests',unit:null,tids:chosen}];
+  else UNITS.forEach(u=>{ const ts=chosen.filter(tid=>unitOf(testById(tid))===u.id); if(ts.length) pages.push({title:u.name,unit:u.id,tids:ts}); });
+  const waiting = (o.tests||[]).some(tid=>testById(tid)&&!vtOf(o,tid)&&testState(o,tid)!=='Rejected');
+  const sexAge = ageSex(p);
+  const html = pages.map(pg=>{
+    let b = '';
+    b += `<div class="report-body"><div class="rtitle">${pg.unit?e(unitName(pg.unit)).toUpperCase()+' REPORT':'LABORATORY INVESTIGATION REPORT'}</div>
+      <div class="report-meta">
+        <div><b>Patient:</b> ${e(p?.name||'')}</div><div><b>Order No:</b> ${e(o.oid)}</div>
+        <div><b>Sex / Age:</b> ${e(sexAge)}</div><div><b>Date:</b> ${e(o.date)}</div>
+        <div><b>Patient ID:</b> ${e(p?.pid||'')}</div><div><b>Status:</b> Validated &amp; released</div>
+      </div>`;
+    pg.tids.forEach(tid=>{
+      const t=testById(tid), res=(o.results&&o.results[tid])||{};
+      b += `<h3 style="margin:14px 0 4px;font-size:12pt;border-bottom:1px solid #333;padding-bottom:2px">${e(t.name)}</h3>
         <table><thead><tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Flag</th><th>Reference</th></tr></thead><tbody>`;
       t.an.forEach(a=>{
-        const val = res[a.n]??'';
-        if(val===''||val==null) return; // only print entered parameters
-        const fl = flag(val,a,p);
-        const abn = isAbnormal(val,a);
-        const flagTxt = fl||(abn?'A':'');
-        const ref = refText(a,p);
-        body += `<tr>
-          <td>${e(a.n)}</td>
-          <td class="${flagTxt}">${e(val)}</td>
-          <td>${e(a.u||'')}</td>
-          <td class="${flagTxt}">${flagTxt}</td>
-          <td style="font-size:9pt">${e(ref)}</td>
-        </tr>`;
+        const val=res[a.n]; if(val===undefined||val==='') return;
+        const fl=flag(val,a,p), fcls=fl==='A'?'A':(fl||'');
+        b += `<tr><td>${e(a.n)}</td><td><b>${e(val)}</b></td><td>${e(a.u||'')}</td><td class="${fcls}">${fl==='A'?'Abn':fl}</td><td>${e(refText(a,p))}</td></tr>`;
       });
-      body += `</tbody></table>`;
-      if(res.Remark && !t.an.some(a=>a.n==='Remark')) body += `<p style="margin:4px 0;font-size:10pt"><b>Remark:</b> ${e(res.Remark)}</p>`;
+      b += `</tbody></table>`;
+      if(res.Remark && !t.an.some(a=>a.n==='Remark')) b += `<p style="margin:4px 0;font-size:10pt"><b>Remark:</b> ${e(res.Remark)}</p>`;
     });
-  });
-  const v = o.validated||{};
-  sigHtml = `<div class="sig-block">
-        ${v.signature?`<img class="sig" src="${v.signature}" alt="Signature">`:''}
-        <div class="name">${e(v.name||db.signer||'')}${v.initials?` (${e(v.initials)})`:''}</div>
-        <div class="title">Medical Laboratory Scientist</div>
-        <div style="font-size:8pt;margin-top:2px">Validated &amp; released ${v.at?new Date(v.at).toLocaleString():''}</div>
-      </div>`;
-
-  body += `<div class="report-footer">
-    <div class="sig-row">${sigHtml}</div>
-  </div>`;
-
-  body += `</div>`; // report-body
-  if(useLh && db.letterfoot) body += `<img class="lh-foot" src="${db.letterfoot}" alt="">`;
-  return {html: body, useLh, readyCount: readyTests.length, total: (o.tests||[]).length};
+    if(waiting) b += `<p style="font-size:9pt;color:#444;margin-top:10px">Other requested investigations are not yet released and will be reported separately.</p>`;
+    const vs=new Map();
+    pg.tids.forEach(tid=>{ const v=vtOf(o,tid); if(!v) return; const k=v.by||v.name; if(!vs.has(k)||new Date(v.at)>new Date(vs.get(k).at)) vs.set(k,v); });
+    b += `<div class="report-footer">${[...vs.values()].map(v=>`<div class="sig-block">${v.signature?`<img class="sig" src="${v.signature}" alt="Signature">`:''}<div class="name">${e(v.name||'')}${v.initials?' ('+e(v.initials)+')':''}</div><div class="title">Medical Laboratory Scientist</div><div style="font-size:8pt;margin-top:2px">Validated &amp; released ${e(dtime(v.at))}</div></div>`).join('')}</div></div>`;
+    const head = (useLh&&db.letterhead)?`<img class="lh-img" src="${db.letterhead}" alt="Letterhead">`:'';
+    const foot = (useLh&&db.letterfoot)?`<img class="lh-foot" src="${db.letterfoot}" alt="Footer">`:'';
+    return `<section class="rpage${useLh?' with-lh':''}">${head}${b}${foot}</section>`;
+  }).join('');
+  return { html, useLh, pages, readyCount:chosen.length, total:(o.tests||[]).length };
 }
 
-async function printReport(id){
+/** Print / export dialog: pick the released tests and how to lay them out */
+async function printDlg(id){
   if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
-  const o = db.orders.find(x=>x.id===id);
-  if(!o) return;
-  const p = await getPatient(o.pid);
-  const built = buildReportHtml(o, p);
-  if(!built) return alert(NOT_RELEASED(o));
-  const reportEl = document.getElementById('report');
-  reportEl.className = built.useLh ? 'with-lh' : '';
-  reportEl.innerHTML = built.html;
-  const prevTitle = document.title;
-  document.title = safeFileName(p?.name||o.oid) + '_Lab_Report';
-  log('REPORT_PRINT', `Printed ${built.readyCount}/${built.total} tests for order ${o.oid}`);
-  window.print();
-  setTimeout(()=>{ document.title = prevTitle; }, 500);
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const p=await getPatient(o.pid);
+  if(!(o.tests||[]).some(tid=>vtOf(o,tid))) return alert('No test has been validated and released yet. When a Medical Laboratory Scientist validates a test, it can be printed here.');
+  const rows=UNITS.map(u=>{
+    const ts=(o.tests||[]).filter(tid=>testById(tid)&&unitOf(testById(tid))===u.id); if(!ts.length) return '';
+    return `<div style="margin:10px 0 4px"><b>${e(u.name)}</b></div>`+ts.map(tid=>{
+      const ok=!!vtOf(o,tid), st=testState(o,tid);
+      return `<label style="display:flex;gap:8px;align-items:center;margin:3px 0;${ok?'':'opacity:.55'}"><input type="checkbox" class="pd_t" value="${tid}" ${ok?'checked':'disabled'} style="width:auto;min-height:0"> ${e(testById(tid).name)} <span class="tag ${st}">${ok?'Released':stLabel(st)}</span></label>`;
+    }).join('');
+  }).join('');
+  openDlg(`<h3>Print / export – ${e(o.oid)} · ${e(p?.name||'')}</h3>
+    <p class="muted">Tick the tests to include. Only released (validated) tests can be printed; the others can be printed later, when they are ready.</p>${rows}
+    <div class="f" style="margin-top:12px"><div class="full"><label>Pages</label><select id="pd_l"><option value="dept">One page per department (recommended)</option><option value="test">One page per test</option><option value="all">All ticked tests together</option></select></div></div>
+    <div class="bar" style="margin-top:14px"><button class="b s" onclick="reportRun('${id}','print')">Print</button><button class="b g" onclick="reportRun('${id}','pdf')">Save PDF</button><button class="b g" onclick="reportRun('${id}','jpg')">Save JPG</button><button class="b" onclick="reportRun('${id}','send')">Send</button><button class="b g" data-close>Cancel</button></div>`);
 }
-
-async function exportReport(id, format){
-  if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
-  const o = db.orders.find(x=>x.id===id);
-  if(!o) return;
-  const p = await getPatient(o.pid);
-  const built = buildReportHtml(o, p);
-  if(!built) return alert(NOT_RELEASED(o));
-  const reportEl = document.getElementById('report');
-  reportEl.className = built.useLh ? 'with-lh' : '';
-  reportEl.innerHTML = built.html;
-  reportEl.style.display = 'block';
-  const fname = safeFileName(p?.name||o.oid) + '_Lab_Report';
-  if(format==='pdf'){
-    const prevTitle = document.title;
-    document.title = fname;
-    log('REPORT_PDF', `Export PDF ${fname} order ${o.oid}`);
-    window.print(); // user chooses "Save as PDF"
-    setTimeout(()=>{ document.title = prevTitle; reportEl.style.display=''; }, 800);
-    alert('In the print dialog, choose "Save as PDF" / "Microsoft Print to PDF" to download the file named after the patient.');
-    return;
+async function reportRun(id, action){
+  const tids=[...document.querySelectorAll('#dlg .pd_t:checked')].map(c=>c.value), layout=document.getElementById('pd_l').value;
+  if(!tids.length) return alert('Tick at least one test to include.');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const p=await getPatient(o.pid), built=buildReportHtml(o,p,{tids,layout});
+  if(!built) return alert('There are no released results among the ticked tests.');
+  closeDlg();
+  const el=document.getElementById('report'); el.className=''; el.innerHTML=built.html;
+  const base=safeFileName(p?.name||o.oid)+'_Lab_Report';
+  if(action==='print'||action==='pdf'){
+    const old=document.title; document.title=base;
+    log(action==='pdf'?'REPORT_PDF':'REPORT_PRINT',`Order ${o.oid}: ${built.readyCount} test(s), ${built.pages.length} page(s)`);
+    if(action==='pdf') alert('In the print window, choose "Save as PDF" (or "Microsoft Print to PDF"). The file is named after the patient.');
+    window.print(); setTimeout(()=>{ document.title=old; },1500); return;
   }
-  if(format==='jpg' || format==='png'){
-    try{
-      await document.fonts.ready;
-      const canvas = await htmlToCanvas(reportEl);
-      const a = document.createElement('a');
-      a.href = canvas.toDataURL('image/jpeg', 0.92);
-      a.download = fname + '.jpg';
-      a.click();
-      log('REPORT_JPG', `Export JPG ${fname} order ${o.oid}`);
-    }catch(err){
-      alert('Could not create image: '+(err.message||err));
-    }
-    reportEl.style.display = '';
-  }
-}
-
-async function sendReport(id, format){
-  if(!can('results.print')&&!can('*')&&!can('results.view')) return alert('Access denied');
-  const o = db.orders.find(x=>x.id===id);
-  if(!o) return;
-  const p = await getPatient(o.pid);
-  const built = buildReportHtml(o, p);
-  if(!built) return alert(NOT_RELEASED(o));
-  const reportEl = document.getElementById('report');
-  reportEl.className = built.useLh ? 'with-lh' : '';
-  reportEl.innerHTML = built.html;
-  reportEl.style.display = 'block';
-  const fname = safeFileName(p?.name||o.oid) + '_Lab_Report';
+  el.style.cssText='display:block;position:fixed;left:-10000px;top:0;width:794px';
   try{
     await document.fonts.ready;
-    const canvas = await htmlToCanvas(reportEl);
-    const blob = await new Promise(res=> canvas.toBlob(res, format==='pdf'?'image/jpeg':'image/jpeg', 0.92));
-    const file = new File([blob], fname + (format==='pdf'?'.jpg':'.jpg'), {type:'image/jpeg'});
-    reportEl.style.display = '';
-    if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({
-        files: [file],
-        title: 'Lab Report – '+(p?.name||''),
-        text: `Laboratory report for ${p?.name||''} (${p?.pid||''}) order ${o.oid}`
-      });
-      log('REPORT_SEND', `Shared report order ${o.oid}`);
-    } else {
-      // fallback download + mailto tip
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = file.name;
-      a.click();
-      alert('File downloaded as '+file.name+'.\\nAttach it in WhatsApp, Email or SMS to send to the patient.\\n(This browser does not support direct share with files.)');
-      log('REPORT_SEND_DOWNLOAD', `Downloaded for send order ${o.oid}`);
+    const els=[...el.querySelectorAll('.rpage')], files=[];
+    for(let i=0;i<els.length;i++){
+      const c=await htmlToCanvas(els[i]), blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.92));
+      files.push(new File([blob], base+(els.length>1?'_'+(i+1)+'_'+safeFileName(built.pages[i].title):'')+'.jpg', {type:'image/jpeg'}));
     }
-  }catch(err){
-    reportEl.style.display = '';
-    if(String(err.name)==='AbortError') return;
-    alert('Send failed: '+(err.message||err));
-  }
+    const dl=()=>files.forEach(f=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=f.name; document.body.appendChild(a); a.click(); a.remove(); });
+    if(action==='send' && navigator.canShare && navigator.canShare({files})){
+      try{ await navigator.share({files,title:'Laboratory report',text:'Laboratory report for '+(p?.name||'')}); log('REPORT_SEND',`Order ${o.oid}: ${files.length} image(s)`); }catch(ex){ if(ex.name!=='AbortError') alert('Could not share: '+ex.message); }
+    } else {
+      dl(); log(action==='send'?'REPORT_SEND':'REPORT_JPG',`Order ${o.oid}: ${files.length} image(s)`);
+      if(action==='send') alert('Your device cannot share directly, so the image(s) were saved. Attach them in WhatsApp or email.');
+    }
+  }catch(ex){ alert('Could not create the image: '+ex.message); }
+  finally{ el.style.cssText=''; el.innerHTML=''; }
 }
+const printReport=id=>printDlg(id), exportReport=id=>printDlg(id), sendReport=id=>printDlg(id);
+const reportActions=oid=>`<button class="b s" onclick="printDlg('${oid}')">Print / export</button>`;
 
-const REPORT_CSS = `#report{display:block;padding:3.8cm 1.8cm 1.5cm 1.8cm;font-family:"Times New Roman",Times,serif;font-size:11pt;color:#000;line-height:1.35;box-sizing:border-box;position:relative;background:#fff;min-height:1123px}
-#report.with-lh{padding:0 0 2.2cm 0;display:flex;flex-direction:column}#report.with-lh .report-body{padding:.4cm 1.5cm .6cm 1.5cm;flex:1 1 auto}
-#report table{width:100%;border-collapse:collapse;margin:8px 0}#report th,#report td{border-bottom:1px solid #999;padding:5px 8px;text-align:left;font-size:10.5pt}#report th{font-weight:700}
-#report .H,#report .L,#report .A{font-weight:700}#report .lh-img{width:100%;height:auto;max-height:4.2cm;display:block}#report .lh-foot{width:100%;height:auto;max-height:1.8cm;display:block;position:absolute;left:0;right:0;bottom:0}
-#report .report-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin:0 0 12px;font-size:10.5pt}#report .report-meta div{margin:2px 0}
-#report .report-footer{margin-top:24px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:28px}#report .sig-block{text-align:center;min-width:160px}#report img.sig{max-height:48px;max-width:150px;display:block;margin:0 auto 4px}#report .name{font-weight:700;font-size:10.5pt}#report .title{font-size:9pt}`;
-/* Report -> JPG, drawn in the browser (no server tools needed). */
+/* CSS used when the report is drawn as an image (the page's own print rules do not apply inside the picture) */
+const REPORT_CSS = `.rpage{display:block;padding:3.8cm 1.8cm 1.5cm 1.8cm;font-family:"Times New Roman",Times,serif;font-size:11pt;color:#000;line-height:1.35;box-sizing:border-box;position:relative;background:#fff;min-height:1123px}
+.rpage.with-lh{padding:0 0 2.2cm 0;display:flex;flex-direction:column}.rpage.with-lh .report-body{padding:.4cm 1.5cm .6cm 1.5cm;flex:1 1 auto}
+.rpage table{width:100%;border-collapse:collapse;margin:8px 0}.rpage th,.rpage td{border-bottom:1px solid #999;padding:5px 8px;text-align:left;font-size:10.5pt}.rpage th{font-weight:700;color:#000}
+.rpage .H,.rpage .L,.rpage .A{font-weight:700}.rpage .lh-img{width:100%;height:auto;max-height:4.2cm;display:block}.rpage .lh-foot{width:100%;height:auto;max-height:1.8cm;display:block;position:absolute;left:0;right:0;bottom:0}
+.rpage .report-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;margin:0 0 12px;font-size:10.5pt}.rpage .report-meta div{margin:2px 0}
+.rpage .report-footer{margin-top:24px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:28px}.rpage .sig-block{text-align:center;min-width:160px}.rpage img.sig{max-height:48px;max-width:150px;display:block;margin:0 auto 4px}.rpage .name{font-weight:700;font-size:10.5pt}.rpage .title{font-size:9pt}
+.rpage .rtitle{text-align:center;font-size:12pt;font-weight:700;margin:0 0 12px;letter-spacing:.5px;border-bottom:1.5px solid #333;padding-bottom:6px}`;
 async function htmlToCanvas(el){
-  const W=794, SCALE=2;
-  const st=document.createElement('style'); st.textContent=REPORT_CSS; document.head.appendChild(st);
-  const prev=el.getAttribute('style');
-  el.style.cssText='position:fixed;left:-10000px;top:0;width:'+W+'px';
+  const W=794, st=document.createElement('style'); st.textContent=REPORT_CSS; document.head.appendChild(st);
+  const prev=el.getAttribute('style')||'';
+  el.style.cssText='display:block;position:fixed;left:-10000px;top:0;width:'+W+'px;background:#fff';
   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
   const H=Math.max(el.scrollHeight,600);
-  const clone=el.cloneNode(true); clone.removeAttribute('style'); clone.style.width=W+'px';
-  const ser=new XMLSerializer().serializeToString(clone);
-  st.remove(); if(prev===null) el.removeAttribute('style'); else el.setAttribute('style',prev);
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml"><style>${REPORT_CSS}</style>${ser}</div></foreignObject></svg>`;
+  const clone=el.cloneNode(true); clone.setAttribute('style','display:block;width:'+W+'px;background:#fff;position:relative');
+  const xml=new XMLSerializer().serializeToString(clone);
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml"><style>${REPORT_CSS}</style>${xml}</div></foreignObject></svg>`;
+  st.remove(); if(prev) el.setAttribute('style',prev); else el.removeAttribute('style');
   const url='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);   // a data: address keeps the canvas readable; a blob: address would taint it
-  try{
-    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('The report image could not be drawn.')); i.src=url; });
-    const c=document.createElement('canvas'); c.width=W*SCALE; c.height=H*SCALE;
-    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.scale(SCALE,SCALE); ctx.drawImage(img,0,0,W,H); return c;
-  } finally { /* nothing to release */ }
-}
-
-function reportActions(oid){
-  if(!(can('results.print')||can('*')||can('results.view'))) return '';
-  const oo=db.orders.find(x=>x.id===oid); if(!oo||!oo.validated) return '<p class="muted">The report is available after validation by a Medical Laboratory Scientist.</p>';
-  return `<div class="bar" style="margin-top:8px;flex-wrap:wrap">
-    <button class="b s" onclick="printReport('${oid}')">Print</button>
-    <button class="b g" onclick="exportReport('${oid}','pdf')">Save PDF</button>
-    <button class="b g" onclick="exportReport('${oid}','jpg')">Save JPG</button>
-    <button class="b" onclick="sendReport('${oid}','jpg')">Send</button>
-  </div>`;
+  const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('Image render failed')); i.src=url; });
+  const S=2, c=document.createElement('canvas'); c.width=W*S; c.height=H*S; const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.scale(S,S); ctx.drawImage(img,0,0);
+  return c;
 }
 
 /* ---------- Test Catalogue ---------- */
@@ -1642,12 +1628,13 @@ function viewTests(){
   return `<h2>Test Catalogue</h2>
   <p class="muted">${db.tests.length} tests available.${adm?' Set prices (₦) for billing. You can also add new tests below.':''}</p>
   ${adm?`<div class="bar"><button class="b" onclick="addTestDlg()">+ Add test</button></div>`:''}
-  <div class="tw"><table><thead><tr><th>Test</th><th>Parameters</th><th>Price (₦)</th><th>TAT (hours)</th>${adm?'<th></th>':''}</tr></thead><tbody>
+  <div class="tw"><table><thead><tr><th>Test</th><th>Parameters</th><th>Price (₦)</th><th>TAT (hours)</th><th>Department</th>${adm?'<th></th>':''}</tr></thead><tbody>
   ${db.tests.map(t=>`<tr>
     <td>${e(t.name)}</td>
     <td style="white-space:normal;max-width:360px">${t.an.map(a=>e(a.n)).join(', ')}</td>
     <td>${adm?`<input type="number" min="0" step="50" value="${t.price||0}" style="width:110px" onchange="setPrice('${t.id}',this.value)">`:money(t.price)}</td>
     <td>${adm?`<input type="number" min="1" step="1" value="${tatOf(t)}" style="width:80px" onchange="setTat('${t.id}',this.value)">`:tatOf(t)+' h'}</td>
+    <td>${adm?`<select onchange="setUnit('${t.id}',this.value)">${UNITS.map(un=>`<option value="${un.id}" ${unitOf(t)===un.id?'selected':''}>${e(un.name)}</option>`).join('')}</select>`:e(unitName(unitOf(t)))}</td>
     ${adm?`<td class="actions"><button class="b g" onclick="editTestDlg('${t.id}')">Edit</button>
       ${!CAT.some(c=>c.id===t.id)?`<button class="b d" onclick="delTest('${t.id}')">Remove</button>`:''}</td>`:''}
   </tr>`).join('')}</tbody></table></div>
@@ -1789,7 +1776,7 @@ function viewUsers(){
             <tr>
               <td>${e(u.username)}</td>
               <td>${e(u.name)}</td>
-              <td>${roleBadge(u.role)}</td>
+              <td>${roleBadge(u.role)}${u.units&&u.units.length?`<div class="muted" style="font-size:12px">${u.units.map(unitName).join(', ')}</div>`:''}</td>
               <td>${e(u.initials||'')}</td>
               <td>${u.signature?`<img class="sig-preview" src="${u.signature}">`:'—'}</td>
               <td>${u.active!==false?'Active':'Disabled'}</td>
@@ -1814,10 +1801,13 @@ function editUser(id){
       <div><label>Username *</label><input id="uu" value="${e(u?.username||'')}" ${u?'readonly':''}></div>
       <div><label>Full Name *</label><input id="un" value="${e(u?.name||'')}"></div>
       <div><label>Role *</label>
-        <select id="ur">
+        <select id="ur" onchange="toggleUnits()">
           ${['reception','cashier','phleb','mlt','lab','auditor','admin'].map(r=>`<option value="${r}" ${u?.role===r?'selected':''}>${e(ROLES[r].label)}</option>`).join('')}
         </select>
       </div>
+      <div class="full" id="unitsBox" style="display:none"><label>Department(s) – for technicians and scientists</label>
+        <div class="chk">${UNITS.map(un=>`<label><input type="checkbox" value="${un.id}" ${(u?.units||[]).includes(un.id)?'checked':''} style="width:auto;min-height:0"> ${e(un.name)}</label>`).join('')}</div>
+        <div class="muted" style="font-size:12px">Leave all unticked to work in every department. Staff with departments only see and act on their own tests and samples.</div></div>
       <div><label>Initials</label><input id="ui" value="${e(u?.initials||'')}" maxlength="6" placeholder="e.g. MYA"></div>
       <div class="full"><label>Password ${u?'(leave blank to keep current)':'*'}</label>
         <input type="password" id="up" autocomplete="new-password"></div>
@@ -1831,6 +1821,7 @@ function editUser(id){
       <button class="b g" data-close>Cancel</button>
     </div>
   `);
+  toggleUnits();
 }
 
 function previewSig(input){
@@ -1852,6 +1843,7 @@ async function saveUser(id){
     signature:sigEl.dataset.sig||(id?db.users.find(x=>x.id===id)?.signature:'')||''};
   if(!id) body.username=g('uu').trim().toLowerCase();
   if(g('up')) body.password=g('up');
+  body.units=['mlt','lab'].includes(body.role)?[...document.querySelectorAll('#unitsBox input:checked')].map(c=>c.value):[];
   if(!body.name||(!id&&!body.username)) return alert('Username and name required');
   try{ const r=await api('/users',body); upsertUser(r.user); closeDlg(); render(); }catch(ex){ alert(ex.message); }
 }
@@ -2339,53 +2331,18 @@ let ordFilter='';
 const FILTERS={today:"Patients today (today's orders)",samples:'Samples received today',pending:'Pending tests',validation:'Awaiting validation',overdue:'Overdue results',rejected:'Rejected samples'};
 function goDash(f){ ordFilter=f; page=(['pending','validation','overdue'].includes(f)&&(can('results.edit')||can('*')))?'results':'orders'; render(); }
 function filterOrders(list){
-  if(!ordFilter) return list; const td=today();
-  const fn={today:o=>o.date===td, samples:o=>o.sample&&o.sample.collected&&String(o.sample.collectedAt||'').slice(0,10)===td,
-    pending:o=>statusOf(o)==='Pending', validation:o=>statusOf(o)==='Validation', overdue:o=>isOverdue(o), rejected:o=>statusOf(o)==='Rejected'}[ordFilter];
-  return fn?list.filter(fn):list;
+  const td=today(); if(!ordFilter) return list;
+  const f={
+    today:o=>o.date===td,
+    samples:o=>orderUnits(o).some(u=>{ if(!canUnit(u)) return false; const x=suOf(o,u); return x&&x.collected&&String(x.collectedAt||'').slice(0,10)===td; }),
+    pending:o=>visTests(o).some(tid=>testState(o,tid)==='Pending'),
+    validation:o=>visTests(o).some(tid=>testState(o,tid)==='Validation'),
+    overdue:o=>isOverdue(o),
+    rejected:o=>visTests(o).some(tid=>testState(o,tid)==='Rejected')
+  }[ordFilter];
+  return f?list.filter(f):list;
 }
 function filterBar(){ return ordFilter?`<div class="alert info" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>Showing: <b>${e(FILTERS[ordFilter]||ordFilter)}</b></span><button class="b g" onclick="ordFilter='';render()">Clear filter</button></div>`:''; }
-const NOT_RELEASED=o=>o.validated?'There are no results to include in this report.':'This report is not released yet. A Medical Laboratory Scientist must validate the results first.';
-const REJECT_REASONS=['Haemolysed specimen','Insufficient volume','Insufficient / incorrect patient data','Incorrect container or anticoagulant','Clotted specimen','Contaminated or leaking container','Unlabelled or mislabelled specimen','Delayed delivery / unstable sample','Other'];
-function rejectDlg(id){
-  if(!can('orders.reject')&&!can('*')) return alert('Access denied');
-  const o=db.orders.find(x=>x.id===id); if(!o) return;
-  openDlg(`<h3>Reject sample – ${e(o.oid)}</h3><p class="muted">A reason is required. It is saved on the order and shown to everyone who tracks it.</p>
-  <div class="f"><div class="full"><label>Reason *</label><select id="rj_r"><option value="">Select a reason…</option>${REJECT_REASONS.map(r=>`<option>${e(r)}</option>`).join('')}</select></div>
-  <div class="full"><label>Remark * (what exactly was wrong, and what should be done)</label><textarea id="rj_t" rows="3" style="width:100%"></textarea></div></div>
-  <div class="fe" id="rj_e" role="alert"></div>
-  <div class="bar" style="margin-top:14px"><button class="b d" onclick="saveReject('${id}')">Reject sample</button><button class="b g" data-close>Cancel</button></div>`);
-}
-function saveReject(id){
-  if(!can('orders.reject')&&!can('*')) return alert('Access denied');
-  const o=db.orders.find(x=>x.id===id); if(!o) return;
-  const r=document.getElementById('rj_r').value, t=document.getElementById('rj_t').value.trim(), er=document.getElementById('rj_e');
-  if(!r){ er.textContent='Select a reason for the rejection.'; return; }
-  if(t.length<5){ er.textContent='Write a remark of at least a few words explaining the rejection.'; return; }
-  o.rejected={reason:r,remark:t,by:session.username,name:session.name||session.username,at:nowISO()};
-  o.updated=nowISO(); o.updatedBy=session.username;
-  log('SAMPLE_REJECT',`Order ${o.oid}: ${r} – ${t}`.slice(0,300)); persist(); closeDlg(); render();
-}
-function undoReject(id){
-  if(!can('results.validate')&&!can('*')) return alert('Only a Medical Laboratory Scientist can undo a rejection.');
-  const o=db.orders.find(x=>x.id===id); if(!o||!confirm('Undo the rejection of '+o.oid+'? The order goes back into the queue.')) return;
-  o.rejected=null; o.updated=nowISO(); o.updatedBy=session.username; log('SAMPLE_REJECT_UNDO',`Order ${o.oid}`); persist(); render();
-}
-function validateOrder(id){
-  if(!can('results.validate')&&!can('*')) return alert('Only a Medical Laboratory Scientist can validate and release results.');
-  const o=db.orders.find(x=>x.id===id); if(!o||o.validated) return;
-  if(!confirm('Validate and release this result?\n\nYour name and signature will be placed on the report and the results will be locked.')) return;
-  saveResults(id);
-  if(!hasResults(o)) return alert('There are no results to validate yet.');
-  o.validated={by:session.username,name:session.name||session.username,initials:session.initials||'',signature:session.signature||'',at:nowISO()};
-  o.updated=nowISO(); o.updatedBy=session.username;
-  log('RESULT_VALIDATE',`Validated and released order ${o.oid}`); persist(); render();
-}
-function revokeValidation(id){
-  if(!can('results.validate')&&!can('*')) return alert('Only a Medical Laboratory Scientist can revoke validation.');
-  const o=db.orders.find(x=>x.id===id); if(!o||!o.validated||!confirm('Revoke the validation of '+o.oid+'? The report is withdrawn until it is validated again.')) return;
-  o.validated=null; o.updated=nowISO(); o.updatedBy=session.username; log('RESULT_VALIDATION_REVOKED',`Order ${o.oid}`); persist(); closeDlg(); render();
-}
 function setTat(id,v){
   if(!can('*')) return; const t=db.tests.find(x=>x.id===id), n=Math.max(1,parseFloat(v)||24);
   log('TEST_TAT',`${t.name}: ${tatOf(t)}h → ${n}h`); t.tat=n; persist(); render();
@@ -2516,6 +2473,52 @@ async function sendTicket(){
   try{ await api('/support/ticket',{cat:document.getElementById('tk_c').value,subject:s,body:b}); alert('Your request was sent. You will see the reply on this page.'); render(); }
   catch(ex){ er.textContent=(ex.status&&ex.status<500)?ex.message:'Something went wrong. Please try again.'; }
 }
+
+/* ---------- Edit an existing order (add tests the patient now wants) ---------- */
+async function editOrder(id){
+  if(!can('orders.create')&&!can('*')) return alert('Access denied');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const p=await getPatient(o.pid), prices=o.prices||{}, priceOf=tid=>prices[tid]!==undefined?prices[tid]:(+(testById(tid)||{}).price||0), has=new Set(o.tests||[]);
+  const groups=UNITS.map(u=>{
+    const ts=db.tests.filter(t=>unitOf(t)===u.id); if(!ts.length) return '';
+    return `<div style="margin:10px 0 4px"><b>${e(u.name)}</b></div><div class="chk">${ts.map(t=>{
+      const inO=has.has(t.id), locked=inO&&(hasAnyResult(o,t.id)||vtOf(o,t.id));
+      return `<label><input type="checkbox" class="ed_t" value="${t.id}" data-price="${inO?priceOf(t.id):(+t.price||0)}" ${inO?'checked':''} ${locked?'disabled':''} onchange="edTot('${o.id}')"> ${e(t.name)} <small class="muted">${money(inO?priceOf(t.id):(+t.price||0))}${locked?' · has results':''}</small></label>`;
+    }).join('')}</div>`;
+  }).join('');
+  openDlg(`<h3>Edit order ${e(o.oid)} – ${e(p?.name||'')}</h3>
+    <p class="muted">Tick the extra tests the patient now wants; they join this same order. Tests that already have results cannot be removed. The new total and balance show below.</p>${groups}
+    <div class="f"><div class="full"><label>Notes</label><input id="ed_n" value="${e(o.notes||'')}"></div></div>
+    <div class="alert" id="ed_sum" style="margin-top:10px"></div>
+    <div class="bar"><button class="b" onclick="saveOrderEdit('${o.id}')">Save changes</button><button class="b g" data-close>Cancel</button></div>`);
+  edTot(o.id);
+}
+function edTot(id){
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  let t=0; document.querySelectorAll('#dlg .ed_t:checked').forEach(c=>{ t+=+c.dataset.price||0; });
+  const el=document.getElementById('ed_sum'); if(!el) return;
+  if(!can('fund.view')&&!can('*')){ const was=+o.total||0; el.innerHTML=`New total <b>${money(t)}</b>${t>was?` (<b>${money(t-was)}</b> more than before; the cashier will collect the difference)`:''}`; return; }
+  const paid=paidOf(o);
+  el.innerHTML=`New total <b>${money(t)}</b> · paid ${money(paid)} · balance <b>${money(Math.max(0,t-paid))}</b>${paid>t?'<br><span style="color:#b91c1c">The amount already paid is more than the new total. Arrange any refund through the cashier.</span>':''}`;
+}
+function saveOrderEdit(id){
+  if(!can('orders.create')&&!can('*')) return alert('Access denied');
+  const o=db.orders.find(x=>x.id===id); if(!o) return;
+  const ids=[...document.querySelectorAll('#dlg .ed_t:checked')].map(c=>c.value);
+  if(!ids.length) return alert('An order needs at least one test.');
+  const before=new Set(o.tests||[]), added=ids.filter(t=>!before.has(t)), removed=[...before].filter(t=>!ids.includes(t));
+  const prices=Object.assign({},o.prices||{});
+  (o.tests||[]).forEach(t=>{ if(prices[t]===undefined) prices[t]=+(testById(t)||{}).price||0; });
+  added.forEach(t=>{ prices[t]=+(testById(t)||{}).price||0; }); removed.forEach(t=>{ delete prices[t]; });
+  o.tests=[...(o.tests||[]).filter(t=>ids.includes(t)),...added];
+  o.prices=prices; o.total=o.tests.reduce((s,t)=>s+(prices[t]||0),0); o.notes=document.getElementById('ed_n').value.trim();
+  o.updated=nowISO(); o.updatedBy=session.username;
+  const nm=l=>l.map(t=>(testById(t)||{}).name||t).join(', ');
+  log('ORDER_EDIT',`Order ${o.oid}: added ${nm(added)||'none'}; removed ${nm(removed)||'none'}`.slice(0,300)); persist(); closeDlg(); render();
+  if(added.length) alert('Added: '+nm(added)+'.\nNew total '+money(o.total)+((can('fund.view')||can('*'))?', paid '+money(paidOf(o))+', balance '+money(balOf(o)):'. The cashier will collect any difference')+'.');
+}
+function toggleUnits(){ const r=document.getElementById('ur'), b=document.getElementById('unitsBox'); if(r&&b) b.style.display=['mlt','lab'].includes(r.value)?'block':'none'; }
+function setUnit(id,v){ if(!can('*')) return; const t=testById(id); if(!t) return; log('TEST_UNIT',`${t.name}: ${unitName(unitOf(t))} → ${unitName(v)}`); t.unit=v; persist(); render(); }
 
 /* ---------- Boot ---------- */
 (async function boot(){

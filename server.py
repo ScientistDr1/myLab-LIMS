@@ -3,9 +3,10 @@
 its own admin and users, live sync across its devices, verified backups and a paid subscription
 (daily / monthly / annual). The platform owner controls facilities from /owner and cannot read patient data.
 Python 3.9+, no packages to install.   Run: python3 server.py"""
-import html as _html,calendar,hashlib,hmac,json,os,queue,re,secrets,sqlite3,ssl,sys,threading,time,urllib.request
+import smtplib,html as _html,calendar,hashlib,hmac,json,os,queue,re,secrets,sqlite3,ssl,sys,threading,time,urllib.request
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-from urllib.parse import urlparse,parse_qs
+from urllib.parse import urlparse,parse_qs,urlencode
+from email.message import EmailMessage
 HERE=os.path.dirname(os.path.abspath(__file__));DATA=os.environ.get('LIMS_DATA',HERE+'/data');os.makedirs(DATA+'/tenants',exist_ok=True)
 PORT=int(os.environ.get('PORT','8080'));BK_HOURS=float(os.environ.get('LIMS_BACKUP_HOURS','6'))
 KEEP=int(os.environ.get('LIMS_BACKUP_KEEP','30'));SESSION_H=float(os.environ.get('LIMS_SESSION_HOURS','12'))
@@ -69,6 +70,49 @@ def meter(code):
     if code>=500: r[2]+=1
     elif code>=400: r[1]+=1
     for k in [k for k in MET if k<m-120]: del MET[k]
+# ---------- alerts to the owner (email + WhatsApp). Secrets come from environment variables, never from the browser ----------
+SMTP_HOST=os.environ.get('LIMS_SMTP_HOST','');SMTP_PORT=int(os.environ.get('LIMS_SMTP_PORT','587'));SMTP_USER=os.environ.get('LIMS_SMTP_USER','');SMTP_PASS=os.environ.get('LIMS_SMTP_PASS','')
+SMTP_TLS=os.environ.get('LIMS_SMTP_TLS','starttls');MAIL_FROM=os.environ.get('LIMS_MAIL_FROM','');RESEND=os.environ.get('RESEND_API_KEY','')
+RESEND_URL=os.environ.get('LIMS_RESEND_URL','https://api.resend.com/emails');CMB_KEY=os.environ.get('CALLMEBOT_APIKEY','');CMB_URL=os.environ.get('LIMS_CALLMEBOT_URL','https://api.callmebot.com/whatsapp.php')
+ALERT_KINDS=('support','payment','register','backup','security');AQ=queue.Queue();ALERT_LAST={}
+def mail_mode(): return 'resend' if RESEND and MAIL_FROM else 'smtp' if SMTP_HOST and MAIL_FROM else ''
+def digits(v): return re.sub(r'\D','',str(v or ''))
+def alert_to(): return [x.strip() for x in cfg('alert_email','').split(',') if re.fullmatch(r'[^@\s,]+@[^@\s,]+\.[^@\s,]+',x.strip())][:3]
+def send_email(to,subject,text):
+    subject=' '.join(str(subject).split())[:150];mode=mail_mode()
+    if mode=='resend':
+        req=urllib.request.Request(RESEND_URL,data=json.dumps({'from':MAIL_FROM,'to':to,'subject':subject,'text':text}).encode(),headers={'Authorization':'Bearer '+RESEND,'Content-Type':'application/json','User-Agent':'mylab-lims/1.0'})
+        urllib.request.urlopen(req,timeout=15).read()
+    elif mode=='smtp':
+        m=EmailMessage();m['From']=MAIL_FROM;m['To']=', '.join(to);m['Subject']=subject;m.set_content(text)
+        c=smtplib.SMTP_SSL(SMTP_HOST,SMTP_PORT,timeout=15) if SMTP_TLS=='ssl' else smtplib.SMTP(SMTP_HOST,SMTP_PORT,timeout=15)
+        with c:
+            if SMTP_TLS=='starttls': c.starttls(context=ssl.create_default_context())
+            if SMTP_USER: c.login(SMTP_USER,SMTP_PASS)
+            c.send_message(m)
+    else: raise RuntimeError('Email sending is not set up on the server')
+def send_whatsapp(number,text):
+    if not CMB_KEY: raise RuntimeError('WhatsApp sending is not set up on the server')
+    urllib.request.urlopen(urllib.request.Request(CMB_URL+'?'+urlencode({'phone':'+'+digits(number),'text':str(text)[:900],'apikey':CMB_KEY}),headers={'User-Agent':'mylab-lims/1.0'}),timeout=15).read()
+def alert(kind,subject,text='',throttle=0):   # queued and sent by a background thread so a slow provider never delays a request
+    try:
+        if kind not in [k for k in cfg('alert_kinds',','.join(ALERT_KINDS)).split(',') if k]: return
+        if throttle:
+            n=time.time()
+            if n-ALERT_LAST.get(kind,0)<throttle: return
+            ALERT_LAST[kind]=n
+        AQ.put((kind,subject,text))
+    except Exception: pass
+def alert_worker():
+    while True:
+        kind,subject,text=AQ.get();brand=cfg('brand','myLab LIMS');link=(PUBLIC_URL+'/owner') if PUBLIC_URL else ''
+        to=alert_to();wa=digits(cfg('alert_whatsapp'))
+        if to and mail_mode():
+            try: send_email(to,'[%s] %s'%(brand,subject),(text+'\n\n' if text else '')+('Owner console: '+link if link else ''));evt('ALERT_SENT','','email',subject[:80])
+            except Exception as ex: evt('ALERT_FAILED','','email',str(ex)[:120])
+        if wa and CMB_KEY:
+            try: send_whatsapp(wa,'%s: %s%s'%(brand,subject,(' '+link) if link else ''));evt('ALERT_SENT','','whatsapp',subject[:80])
+            except Exception as ex: evt('ALERT_FAILED','','whatsapp',str(ex)[:120])
 def setcfg(k,v): hx('INSERT INTO cfg VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v',(k,str(v)))
 if not hone('SELECT 1 FROM plans'):
     for i,n,d in (('daily','Daily',1),('monthly','Monthly',30),('annual','Annual',365)): hx('INSERT INTO plans VALUES(?,?,?,0)',(i,n,d))
@@ -102,7 +146,42 @@ R={'patients':(ALL,'admin reception mlt lab','admin'),'orders':(ALL,'admin recep
 'qcruns':('admin lab mlt auditor','admin lab mlt',''),'tests':(ALL,'admin','admin'),
 'audit':('admin lab mlt auditor',ALL,''),'users':(ALL,'',''),'meta':(ALL,'admin',''),'brand':(ALL,'admin',''),'bk':(ALL,'',''),
 'resetreq':('admin','','admin')}
-OWN={'phleb':('sample',),'mlt':('sample','results','updated','updatedBy','rejected'),'lab':('sample','results','updated','updatedBy','rejected','validated')}  # parts of an order each role may change
+OWN={'phleb':('su','sample'),'mlt':('su','sample','results','updated','updatedBy','rejected','tests','prices','total','notes'),'lab':('su','sample','results','updated','updatedBy','rejected','validated','vt','tests','prices','total','notes')}  # parts of an order each role may change
+UNITS_ALL=('haem','chem','sero','micro','bb','other')
+def default_unit(name):
+    n=str(name or '')
+    if re.search(r'blood group|cross.?match|coombs',n,re.I): return 'bb'
+    if re.search(r'blood count|fbc|pcv|haemoglobin|\bhb\b|esr|genotype|malaria|reticul|coagul|prothrombin',n,re.I): return 'haem'
+    if re.search(r'hbsag|hcv|rvs|hiv|vdrl|widal|pylori|serum pt|pregnan|toxo|chlam|typhoid|syphil',n,re.I): return 'sero'
+    if re.search(r'culture|m/c/s|sensitiv|stool|semen|seminal|sfa|sputum|swab|afb|urine m',n,re.I): return 'micro'
+    return 'chem'
+def unit_of(tid):
+    t=get('tests',tid) or {};return t.get('unit') or default_unit(t.get('name',''))
+def my_units(u): return set(u.get('units') or []) if u.get('role') in('mlt','lab') else None
+def allowed_unit(u,unit):
+    m=my_units(u);return not m or unit in m
+def has_res(r): return isinstance(r,dict) and any(k not in('_meta','Remark','Height (cm)') and v not in('',None) for k,v in r.items())
+def order_ok(role,u,old,d):   # department, validation and locking rules for everyone except the administrator
+    o_res,n_res=old.get('results') or {},d.get('results') or {};o_vt,n_vt=old.get('vt') or {},d.get('vt') or {};o_su,n_su=old.get('su') or {},d.get('su') or {}
+    for unit in set(o_su)|set(n_su):                                   # sample acceptance / rejection belongs to the department's own staff
+        a,b=o_su.get(unit) or {},n_su.get(unit) or {}
+        if a==b: continue
+        if a.get('accepted')!=b.get('accepted') or a.get('rejected')!=b.get('rejected'):
+            if role=='phleb' or not allowed_unit(u,unit): return False
+            if a.get('rejected') and not b.get('rejected') and role!='lab': return False   # only a scientist can undo a rejection
+    for tid in set(o_res)|set(n_res):                                  # results: own department only, locked once released, remarks by a scientist
+        if o_res.get(tid)!=n_res.get(tid):
+            if role in('mlt','lab') and not allowed_unit(u,unit_of(tid)): return False
+            if o_vt.get(tid) and n_vt.get(tid): return False
+            if role=='mlt' and ((o_res.get(tid) or {}).get('Remark') or '')!=((n_res.get(tid) or {}).get('Remark') or ''): return False   # an empty remark and no remark are the same
+    for tid in set(o_vt)|set(n_vt):                                    # validation: a scientist, own department, signed in their own name
+        if o_vt.get(tid)!=n_vt.get(tid):
+            if role!='lab' or not allowed_unit(u,unit_of(tid)): return False
+            nv=n_vt.get(tid)
+            if nv and nv.get('by')!=u['username']: return False
+    for tid in set(old.get('tests') or [])-set(d.get('tests') or []):   # a test with results or released cannot be removed
+        if has_res(o_res.get(tid)) or o_vt.get(tid): return False
+    return True
 def remarks(res): return {t:r.get('Remark') for t,r in (res or {}).items() if isinstance(r,dict) and r.get('Remark')}
 APPEND=('audit','qcruns');ROLES=tuple(ALL.split())
 CSP="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'"
@@ -173,15 +252,14 @@ def push(u,b,q):
                 if c=='pay' and role!='admin': raise Err(403,'Only an administrator can change a payment')
                 if c=='orders' and role!='admin':
                     keys=(set(d)|set(old))-{'_v'}
-                    bad=any(d.get(k)!=old.get(k) for k in keys if k not in OWN[role]) if role in OWN else any(d.get(k)!=old.get(k) for k in ('results','sample','validated','rejected'))
-                    if not bad and role in('mlt','lab') and old.get('validated') and d.get('validated') and d.get('results')!=old.get('results'): bad=True   # validated results are locked
-                    if not bad and role=='mlt' and remarks(d.get('results'))!=remarks(old.get('results')): bad=True                                    # remarks: MLS only
-                    if not bad and role=='lab' and d.get('validated') and d.get('validated')!=old.get('validated') and (d['validated'].get('by')!=u['username']): bad=True  # cannot sign for someone else
+                    bad=any(d.get(k)!=old.get(k) for k in keys if k not in OWN[role]) if role in OWN else any(d.get(k)!=old.get(k) for k in ('results','sample','su','vt','validated','rejected'))
+                    if not bad and role=='lab' and d.get('validated') and d.get('validated')!=old.get('validated') and (d['validated'].get('by')!=u['username']): bad=True
+                    if not bad and not order_ok(role,u,old,d): bad=True
                     if bad: raise Err(403,'Your role cannot change that part of an order')
                 v=old['_v']+1
             else:
                 if base is not None: raise Err(409,'This record was deleted by someone else.')
-                if c=='orders' and (role not in('admin','reception','mlt','lab') or (role!='admin' and (d.get('results') or d.get('validated') or d.get('rejected')))): raise Err(403,'Your role cannot create orders')
+                if c=='orders' and (role not in('admin','reception','mlt','lab') or (role!='admin' and (d.get('results') or d.get('validated') or d.get('rejected') or d.get('vt') or d.get('su')))): raise Err(403,'Your role cannot create orders')
                 if c=='pay' and not(isinstance(d.get('amt'),(int,float)) and d['amt']>0 and not d.get('void')): raise Err(400,'Invalid payment')
                 v=1
             if c=='audit': d.update(user=u['username'],role=role,ts=now())
@@ -205,6 +283,8 @@ def users(u,b,q):
             un=str(b.get('username','')).strip().lower()
             if not re.fullmatch(r'[a-z0-9._-]{3,32}',un): raise Err(400,'Username: 3-32 letters, numbers, . _ -')
             d['username']=un
+        if 'units' in b: d['units']=[x for x in (b.get('units') or []) if x in UNITS_ALL][:6]
+        if d.get('role') not in('mlt','lab'): d['units']=[]
         pw=b.get('password')
         if not str(d.get('name','')).strip() or d.get('role') not in ROLES: raise Err(400,'Name and a valid role are required')
         if (not old and not pw) or (pw and len(pw)<8): raise Err(400,'Password must be at least 8 characters')
@@ -247,7 +327,9 @@ def settle(pid,by):   # mark a pending payment paid and extend the facility's su
         p=HOST.execute("SELECT code,plan,amount,days,status FROM pay WHERE id=?",(pid,)).fetchone()
         if not p or p[4]!='pending': return False
         HOST.execute("UPDATE pay SET status='paid',done=?,by=? WHERE id=?",(time.time(),by,pid))
-    extend(p[0],p[3],p[1]);tlog(p[0],by,'system','SUBSCRIPTION_PAID','%s plan, %s days, amount %s'%(p[1],p[3],p[2]));return True
+    extend(p[0],p[3],p[1]);tlog(p[0],by,'system','SUBSCRIPTION_PAID','%s plan, %s days, amount %s'%(p[1],p[3],p[2]))
+    if by=='paystack': alert('payment','Online payment received','Facility %s paid %s for the %s plan.'%(p[0].upper(),p[2],p[1]))
+    return True
 def plans(): return [{'id':r[0],'name':r[1],'days':r[2],'price':r[3]} for r in hall('SELECT id,name,days,price FROM plans ORDER BY days')]
 def sub_get(u,b,q):
     si=subinfo(u['_fid'])
@@ -262,7 +344,8 @@ def newpay(u,b,method):
     hx("INSERT INTO pay VALUES(?,?,?,?,?,?,?,'pending',?,NULL,NULL,?)",(pid,u['_fid'],p[0],p[3],p[2],method,ref,time.time(),str(b.get('note',''))[:200]))
     return pid,ref,p
 def sub_request(u,b,q):
-    pid,ref,p=newpay(u,b,'transfer');return {'id':pid,'ref':ref,'amount':p[3],'plan':p[1],'bank':cfg('bank')}
+    pid,ref,p=newpay(u,b,'transfer');fn=(hone('SELECT name FROM tenants WHERE code=?',(u['_fid'],)) or ['?'])[0]
+    alert('payment','Bank-transfer payment waiting: '+fn,'Facility: %s (%s)\nPlan: %s\nAmount: %s\nReference: %s\nConfirm it in the owner console once the money arrives.'%(fn,u['_fid'].upper(),p[1],p[3],ref));return {'id':pid,'ref':ref,'amount':p[3],'plan':p[1],'bank':cfg('bank')}
 def psk(path,payload):
     req=urllib.request.Request('https://api.paystack.co'+path,data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+PAYSTACK,'Content-Type':'application/json'})
     return json.loads(urllib.request.urlopen(req,timeout=20).read())
@@ -274,7 +357,7 @@ def sub_paystack(u,b,q):
     return {'url':r['data']['authorization_url'],'ref':ref}
 def paystack_hook(h,raw):
     sig=h.headers.get('x-paystack-signature','')
-    if not PAYSTACK or not hmac.compare_digest(hmac.new(PAYSTACK.encode(),raw,hashlib.sha512).hexdigest(),sig): evt('BAD_WEBHOOK_SIGNATURE','',cip(h),'');raise Err(401,'bad signature')
+    if not PAYSTACK or not hmac.compare_digest(hmac.new(PAYSTACK.encode(),raw,hashlib.sha512).hexdigest(),sig): evt('BAD_WEBHOOK_SIGNATURE','',cip(h),'');alert('security','Payment webhook with a bad signature','Someone sent a fake payment notification.',900);raise Err(401,'bad signature')
     ev=json.loads(raw or b'{}')
     if ev.get('event')=='charge.success':
         d=ev.get('data') or {};p=hone("SELECT id,amount FROM pay WHERE ref=? AND method='paystack' AND status='pending'",(d.get('reference'),))
@@ -296,7 +379,7 @@ def o_overview(u,b,q):
     ds=time.strftime('%Y-%m-%d');ms=time.strftime('%Y-%m')
     paid=[p for p in pay if p['status']=='paid'];f=lambda fmt:sum(p['amount'] for p in paid if time.strftime(fmt,time.localtime(p['done'] or 0))==time.strftime(fmt))
     return {'tenants':rows,'tickets':tk,'payments':pay,'plans':plans(),'revenue':{'today':f('%Y-%m-%d'),'month':f('%Y-%m'),'all':sum(p['amount'] for p in paid)},
-      'demo':DEMO,'cfg':{k:cfg(k,d) for k,d in (('trial_days','7'),('bank',''),('brand','myLab LIMS'),('privacy',''),('terms',''),('legal_updated',''))+tuple((k,'') for k in SUPPORT_KEYS)},'paystack':bool(PAYSTACK)}
+      'demo':DEMO,'cfg':{k:cfg(k,d) for k,d in (('trial_days','7'),('bank',''),('brand','myLab LIMS'),('privacy',''),('terms',''),('legal_updated',''),('alert_email',''),('alert_whatsapp',''),('alert_kinds',','.join(ALERT_KINDS)))+tuple((k,'') for k in SUPPORT_KEYS)},'alerts':{'email':mail_mode(),'whatsapp':bool(CMB_KEY)},'paystack':bool(PAYSTACK)}
 def o_monitor(u,b,q):   # activity metadata only - never patient records
     need_owner(u);n=time.time();cur=int(n//60);mm=[v for k,v in MET.items() if k>=cur-60]
     ev=[dict(zip(('ts','kind','code','ip','detail'),r)) for r in hall('SELECT ts,kind,code,ip,detail FROM events ORDER BY ts DESC LIMIT 150')]
@@ -319,7 +402,8 @@ def sup_new(u,b,q):
     if len(subj)<3 or len(body)<10: raise Err(400,'Please enter a subject and describe the problem in a sentence or two.')
     tid=secrets.token_hex(5);TK[k].append(time.time())
     hx("INSERT INTO tickets VALUES(?,?,?,?,?,?,?,?,'open',?,?,'')",(tid,u['_fid'],u['username'],u['name'],u['role'],cat,subj[:120],body[:3000],time.time(),time.time()))
-    evt('SUPPORT_REQUEST',u['_fid'],'',subj[:60]);return {'ok':True,'id':tid}
+    evt('SUPPORT_REQUEST',u['_fid'],'',subj[:60]);fn=(hone('SELECT name FROM tenants WHERE code=?',(u['_fid'],)) or ['?'])[0]
+    alert('support','Support request from '+fn,'Facility: %s (%s)\nFrom: %s (%s)\nCategory: %s\nSubject: %s'%(fn,u['_fid'].upper(),u['name'],u['role'],cat,subj[:120]));return {'ok':True,'id':tid}
 def o_ticket(u,b,q):
     need_owner(u);tid=b.get('id');a=b.get('action');r=str(b.get('reply','')).strip()[:3000]
     if not hone('SELECT 1 FROM tickets WHERE id=?',(tid,)): raise Err(404,'No such request')
@@ -362,14 +446,29 @@ def o_plans(u,b,q):
         hx('UPDATE plans SET price=?,name=? WHERE id=?',(pr,str(p.get('name',''))[:30] or p['id'],p['id']))
     return {'ok':True}
 LIM={'privacy':60000,'terms':60000,'support_phone':40,'support_whatsapp':30,'support_email':120,'support_hours':160}
+LIM={'privacy':60000,'terms':60000,'support_phone':40,'support_whatsapp':30,'support_email':120,'support_hours':160,'alert_email':200,'alert_whatsapp':30}
 def o_cfg(u,b,q):
     need_owner(u)
-    for k in ('trial_days','bank','support','brand')+SUPPORT_KEYS[1:]+('privacy','terms'):
+    for k in ('trial_days','bank','support','brand')+SUPPORT_KEYS[1:]+('privacy','terms','alert_email','alert_whatsapp','alert_kinds'):
         if k in b:
             v=str(b[k])
             if k in('privacy','terms') and v.strip()!=cfg(k,'').strip(): setcfg('legal_updated',time.strftime('%d %B %Y'))
+            if k=='alert_kinds': v=','.join(x for x in v.split(',') if x in ALERT_KINDS)
             setcfg(k,v[:LIM.get(k,600)])
     return {'ok':True}
+def o_alert_test(u,b,q):   # sends a real test message now and reports what happened, so the owner can check the setup
+    need_owner(u);to=alert_to();wa=digits(cfg('alert_whatsapp'));brand=cfg('brand','myLab LIMS');res={}
+    if not to: res['email']='Add at least one valid alert email address, save, then test again.'
+    elif not mail_mode(): res['email']='Email sending is not set up on the server yet (see the setup notes).'
+    else:
+        try: send_email(to,'[%s] Test alert'%brand,'This is a test alert from your platform. If you can read it, email alerts work.');res['email']='Sent to '+', '.join(to)+'. Check the inbox and the spam folder.'
+        except Exception as ex: res['email']='Failed: '+str(ex)[:160]
+    if not wa: res['whatsapp']='Add your WhatsApp number, save, then test again.'
+    elif not CMB_KEY: res['whatsapp']='WhatsApp sending is not set up on the server yet (see the setup notes).'
+    else:
+        try: send_whatsapp(wa,'%s: test alert. If you can read this, WhatsApp alerts work.'%brand);res['whatsapp']='Request sent. It should arrive within a minute.'
+        except Exception as ex: res['whatsapp']='Failed: '+str(ex)[:160]
+    return res
 def o_resetadmin(u,b,q):   # help a facility whose admin lost the password
     need_owner(u);code=b.get('code');un=str(b.get('username','')).lower();pw=str(b.get('password',''))
     if len(pw)<8: raise Err(400,'Password must be at least 8 characters')
@@ -427,11 +526,12 @@ def register(h,b):
     with Tx():
         u={'id':uid,'username':un,'name':full,'role':'admin','initials':'','signature':'','active':True,'created':now()}
         put('users',uid,u,1);setpw(uid,un,pw);put('meta','meta',{'id':'meta','lab':name,'pre':'','signer':full,'printMode':'blank'},1);audit(un,'admin','FACILITY_REGISTERED',name+' ('+code.upper()+')'+(' | accepted Privacy Policy/Terms dated '+cfg('legal_updated','?') if legal else ''))
-    evt('REGISTER',code,cip(h),name);return {'token':newsession(code,uid),'user':u,'facility':code,'facility_code':code.upper()}
+    evt('REGISTER',code,cip(h),name);alert('register','New facility registered: '+name,'Facility: %s\nCode: %s\nAdministrator: %s'%(name,code.upper(),full))
+    return {'token':newsession(code,uid),'user':u,'facility':code,'facility_code':code.upper()}
 def login(h,b):
     fac=str(b.get('facility','')).strip().lower();un=str(b.get('username','')).strip().lower();pw=str(b.get('password',''))
     ip=cip(h);k=('*' if PROXY else h.client_address[0],fac,un);t=time.time();FAILS[k]=[x for x in FAILS.get(k,[]) if t-x<600]
-    if len(FAILS[k])>=5: evt('LOCKOUT',fac[:30],ip,un[:30]);raise Err(429,'Too many attempts. Wait a few minutes and try again.')
+    if len(FAILS[k])>=5: evt('LOCKOUT',fac[:30],ip,un[:30]);alert('security','Sign-in lock-out','Repeated failed sign-ins for username "%s" at facility %s.'%(un[:30],fac[:30].upper()),900);raise Err(429,'Too many attempts. Wait a few minutes and try again.')
     def fail():
         FAILS[k].append(t);evt('LOGIN_FAILED',fac[:30],ip,un[:30]);return Err(401,'Invalid facility code or login details.')
     if fac=='platform':
@@ -491,6 +591,7 @@ def backup(by='system'):
             old=get('bk','status');st={'id':'status','when':now(),'file':name,'size':os.path.getsize(p),'sha256':sha,'ok':ok,'counts':counts,'by':by}
             put('bk','status',st,old['_v']+1 if old else 1);audit(by,'admin' if by!='system' else 'system','BACKUP','%s verified=%s'%(name,ok))
         for f in sorted(x for x in os.listdir(t.bk) if x.endswith('.db'))[:-KEEP]: os.remove(t.bk+'/'+f)
+    if not ok: alert('backup','Backup FAILED verification: '+t.code.upper(),'The newest backup for this facility did not pass the integrity check.',3600)
     return st
 def runbk(u,b,q):
     if u['role']!='admin': raise Err(403,'Administrators only')
@@ -509,7 +610,7 @@ def sched():
 ROUTES={('GET','/api/me'):lambda u,b,q:pub(u),('GET','/api/state'):state,('GET','/api/changes'):changes,('POST','/api/push'):push,
 ('POST','/api/next'):nxt,('POST','/api/users'):users,('POST','/api/password'):pwd,('POST','/api/backup/run'):runbk,
 ('GET','/api/sub'):sub_get,('POST','/api/sub/request'):sub_request,('POST','/api/sub/paystack'):sub_paystack,
-('GET','/api/support'):sup_get,('POST','/api/support/ticket'):sup_new,('POST','/api/owner/ticket'):o_ticket,('GET','/api/owner/overview'):o_overview,('GET','/api/owner/monitor'):o_monitor,('POST','/api/owner/tenant'):o_tenant,('POST','/api/owner/record'):o_record,('POST','/api/owner/confirm'):o_confirm,
+('GET','/api/support'):sup_get,('POST','/api/support/ticket'):sup_new,('POST','/api/owner/ticket'):o_ticket,('POST','/api/owner/alert-test'):o_alert_test,('GET','/api/owner/overview'):o_overview,('GET','/api/owner/monitor'):o_monitor,('POST','/api/owner/tenant'):o_tenant,('POST','/api/owner/record'):o_record,('POST','/api/owner/confirm'):o_confirm,
 ('POST','/api/owner/reject'):o_reject,('POST','/api/owner/plans'):o_plans,('POST','/api/owner/cfg'):o_cfg,('POST','/api/owner/resetadmin'):o_resetadmin}
 WRITES=('/api/push','/api/next','/api/users','/api/backup/run');OWNER_OK=('/api/me','/api/logout','/api/password')
 PAGES={'/':'index.html','/index.html':'index.html','/owner':'owner.html'}
@@ -562,7 +663,7 @@ class H(BaseHTTPRequestHandler):
             s.out(200,fn(u,b,parse_qs(urlparse(s.path).query)))
         except Err as e: s.out(e.code,{'error':e.msg})
         except (BrokenPipeError,ConnectionResetError): pass
-        except Exception as e: print('ERROR',p,repr(e));evt('SERVER_ERROR','',cip(s),p);s.out(500,{'error':'Something went wrong. Please try again.'})
+        except Exception as e: print('ERROR',p,repr(e));evt('SERVER_ERROR','',cip(s),p);alert('security','Server error','An unexpected error happened on '+p,900);s.out(500,{'error':'Something went wrong. Please try again.'})
     def events(s):
         t=CTX.t;s.send_response(200);s.send_header('Content-Type','text/event-stream');s.send_header('Cache-Control','no-cache');s.end_headers()
         q=queue.Queue()
@@ -581,5 +682,5 @@ if __name__=='__main__':
     ThreadingHTTPServer.daemon_threads=True;srv=ThreadingHTTPServer(('0.0.0.0',PORT),H)
     cert,key=os.environ.get('LIMS_CERT'),os.environ.get('LIMS_KEY')
     if cert and key: ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);ctx.load_cert_chain(cert,key);srv.socket=ctx.wrap_socket(srv.socket,server_side=True)
-    threading.Thread(target=sched,daemon=True).start()
+    threading.Thread(target=sched,daemon=True).start();threading.Thread(target=alert_worker,daemon=True).start()
     print('myLab LIMS platform running on port %d  (%s)   facilities: /   owner console: /owner'%(PORT,'HTTPS' if cert and key else 'HTTP'));srv.serve_forever()
